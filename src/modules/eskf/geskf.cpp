@@ -3,6 +3,7 @@
 //
 
 #include "geskf.h"
+#include <iostream>
 
 namespace eskf {
     void GESKF::predict_covariance(const Vector3f &delta_ang, const Vector3f &delta_vel,
@@ -554,7 +555,8 @@ namespace eskf {
             _P[23][23] = kahan_summation(_P[23][23], proc_var_wind, _accumulator[23]);
         }
 
-        regular_covariance_to_symmetric<DIM>(0);
+//        regular_covariance_to_symmetric<DIM>(0);
+        constrain_covariance();
     }
 
     uint8_t GESKF::fuse_pos_horz(const Vector2f &pos, const Vector3f &offset_body, const Vector3f &offset_nav,
@@ -2018,8 +2020,8 @@ namespace eskf {
         _state.delta_vel_bias += _error_state.delta_vel_bias;
         _state.grav += _error_state.grav;
         _state.mag_norm += _error_state.mag_norm;
-        _state.mag_ang += _state.mag_ang;
-        _state.mag_bias += _state.mag_bias;
+        _state.mag_ang += _error_state.mag_ang;
+        _state.mag_bias += _error_state.mag_bias;
         _state.wind += _error_state.wind;
 
         // q = Exp(δθ) * q
@@ -2029,6 +2031,8 @@ namespace eskf {
         _state.quat_nominal = delta_q * q;
         _state.quat_nominal.normalize();
         _Rnb = _state.quat_nominal;
+
+//        std::cout << _error_state.ang(0) << ", " << _error_state.ang(1) << ", " << _error_state.ang(2) << std::endl;
 
         reset_error_state();
     }

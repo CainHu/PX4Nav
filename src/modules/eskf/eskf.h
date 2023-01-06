@@ -42,10 +42,12 @@ namespace eskf {
             reset_error_state();
             reset_covariance_matrix(0, DIM);
             regular_covariance_to_symmetric<DIM>(0);
+//            init_covariance();
             reset_accmulator();
         }
 
         void initialize();
+        void init_covariance();
 
         // Priori
         /*!
@@ -176,7 +178,7 @@ namespace eskf {
         void reset_covariance_matrix(const uint8_t start_index, const uint8_t end_index, const float diag_cov[DIM]) {
             for (uint8_t i = start_index; i < end_index; ++i) {
                 // Diaginal
-                _P[i][i] = diag_cov[i] * _dt2 * 1e4f;
+                _P[i][i] = diag_cov[i] * _dt2;
 
                 // Upper triangular
                 for (uint8_t j = start_index; j < i; ++j) {
@@ -215,7 +217,7 @@ namespace eskf {
             uint8_t end_index = start_index + N;
             for (uint8_t i = start_index; i < end_index; ++i) {
                 // Diaginal
-                _P[i][i] = diag_cov[i - start_index] * _dt2 * 1e4f;
+                _P[i][i] = diag_cov[i - start_index] * _dt2;
 
                 // Upper triangular
                 for (uint8_t j = start_index; j < i; ++j) {
@@ -245,7 +247,7 @@ namespace eskf {
             uint8_t end_index = start_index + N;
             for (uint8_t i = start_index; i < end_index; ++i) {
                 // Diaginal
-                _P[i][i] = diag_cov * _dt2 * 1e4f;
+                _P[i][i] = diag_cov * _dt2;
 
                 // Upper triangular
                 for (uint8_t j = start_index; j < i; ++j) {
@@ -487,6 +489,8 @@ namespace eskf {
          * @return - 是否融合成功, 如果后验协方差矩阵的对角元为正, 则认为成功, 否则认为失败
          */
         bool posterior_estimate(const float (&HP)[DIM], const float &innov_var, const float &innov);
+
+        void constrain_covariance();
 
         /*!
          * 把上三角关联的行列复制到下三角

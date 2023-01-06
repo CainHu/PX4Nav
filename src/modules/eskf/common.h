@@ -46,14 +46,14 @@ namespace eskf {
         float airspeed_delay_ms {100.0f};
 
         // 零漂时间常数
-//        float gyro_bias_tau_inv {0.0f};     ///< 陀螺仪偏移的时间常数
-//        float acc_bias_tau_inv {0.003f};	///< 加速度计偏移的时间常数
-//        float mag_bias_tau_inv {0.003f};   ///< 磁力计偏移的时间常数
-//        float wind_tau_inv {0.1f};          ///< 风速的时间常数
         float gyro_bias_tau_inv {0.0f};     ///< 陀螺仪偏移的时间常数
-        float acc_bias_tau_inv {0.0f};	///< 加速度计偏移的时间常数
-        float mag_bias_tau_inv {0.0f};   ///< 磁力计偏移的时间常数
-        float wind_tau_inv {0.0f};          ///< 风速的时间常数
+        float acc_bias_tau_inv {0.003f};	///< 加速度计偏移的时间常数
+        float mag_bias_tau_inv {0.003f};   ///< 磁力计偏移的时间常数
+        float wind_tau_inv {0.1f};          ///< 风速的时间常数
+//        float gyro_bias_tau_inv {0.0f};     ///< 陀螺仪偏移的时间常数
+//        float acc_bias_tau_inv {0.0f};	///< 加速度计偏移的时间常数
+//        float mag_bias_tau_inv {0.0f};   ///< 磁力计偏移的时间常数
+//        float wind_tau_inv {0.0f};          ///< 风速的时间常数
 
         // 过程噪声
         float pos_proc_noise {1e-5f};   ///< 位置过程噪声 (m/s)
@@ -110,6 +110,41 @@ namespace eskf {
         float mag_norm {0.45f};			///< 磁场强度 (Gauss)
         float mag_inclination {0.0f}; 	///< 磁倾角 (degrees)
         float mag_declination {0.0f};	///< 磁偏角 (degrees)
+
+        /* 协方差矩阵参数 */
+        float std_init_pos_horz {0.5f};
+        float std_init_pos_vert {1.f};
+        float std_init_vel_horz {0.5f};
+        float std_init_vel_vert {1.f};
+        float std_init_ang {0.1f};
+        float std_init_gyro_bias {0.1f};
+        float std_init_acc_bias {0.2f};
+        float std_init_grav {0.2f};
+        float std_init_mag_norm {5.0e-2f};
+        float std_init_mag_ang {5.0e-2f};
+        float std_init_mag_bias {5.0e-2f};
+        float std_init_wind {1.0f};
+
+        float var_pos_max {1e6f};               ///< 位置的最大方差
+        float var_vel_max {1e6f};               ///< 速度的最大方差
+        float var_angle_max {1.f};              ///< 轴角的最大方差
+        float var_gyro_bias_max {1.f};          ///< 陀螺仪偏移的最大方差
+        float var_acc_bias_max {1.f};           ///< 加速度计偏移的最大方差
+        float var_grav_max {1.f};               ///< 重力加速度的最大方差
+        float var_mag_norm_max {1.f};           ///< 磁场强度的最大方差
+        float var_mag_ang_max {1.f};            ///< 磁场角度的最大方差
+        float var_mag_bias_max {1.f};           ///< 磁力计偏移的最大方差
+        float var_wind_max {1.f};               ///< 风速的最大方差
+        float var_pos_min {1e-6f};              ///< 位置的最小方差
+        float var_vel_min {1e-6f};              ///< 速度的最小方差
+        float var_angle_min {1e-6f};            ///< 轴角的最小方差
+        float var_gyro_bias_min {1e-6f};        ///< 陀螺仪偏移的最小方差
+        float var_acc_bias_min {1e-6f};         ///< 加速度计偏移的最小方差
+        float var_grav_min {1.f};               ///< 重力加速度的最小方差
+        float var_mag_norm_min {1e-6f};         ///< 磁场强度的最小方差
+        float var_mag_ang_min {1e-6f};          ///< 磁场角度的最小方差
+        float var_mag_bias_min {1e-6f};         ///< 磁力计偏移的最小方差
+        float var_wind_min {1e-6f};             ///< 风速的最小方差
 
         /* 传感器安装距离 */
         Vector3f imu_pos_body;			///< imu在机体系的坐标

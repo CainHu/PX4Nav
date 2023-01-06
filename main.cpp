@@ -149,9 +149,26 @@ int main() {
     eskf_rtk.disable_estimation_wind();
     eskf_rtk.initialize();
 
+    Quatd tmp(double(eskf_rtk.get_quaternion()(0)), double(eskf_rtk.get_quaternion()(1)), double(eskf_rtk.get_quaternion()(2)), double(eskf_rtk.get_quaternion()(3)));
+    Vector3d tmp1 = generator::quat2euler(tmp);
+
 //    clock_t t1 = clock();
     for (unsigned i = 0; i < pos.size(); ++i) {
         Vector3f delta_ang(float(wm[i](0)), float(wm[i](1)), float(wm[i](2))), delta_vel(float(vm[i](0)), float(vm[i](1)), float(vm[i](2)));
+        if (i > 0) {
+            Vector3d delta_ang_meas = wm[i] + 1./12. * wm[i - 1].cross(wm[i]);
+            delta_ang = {float(delta_ang_meas(0)), float(delta_ang_meas(1)), float(delta_ang_meas(2))};
+
+            Vector3d delta_vel_meas = vm[i] + 0.5 * wm[i].cross(vm[i]) + 1./12. * (wm[i - 1].cross(vm[i]) + vm[i - 1].cross(wm[i]));
+            delta_vel = {float(delta_vel_meas(0)), float(delta_vel_meas(1)), float(delta_vel_meas(2))};
+        } else {
+            const Vector3d &delta_ang_meas = wm[i];
+            delta_ang = {float(delta_ang_meas(0)), float(delta_ang_meas(1)), float(delta_ang_meas(2))};
+
+            const Vector3d &delta_vel_meas = vm[i];
+            delta_vel = {float(delta_vel_meas(0)), float(delta_vel_meas(1)), float(delta_vel_meas(2))};
+        }
+
         Vector<bool, 3> gyro_clipping = {};
         Vector<bool, 3> acc_clipping = {};
 
@@ -206,6 +223,7 @@ int main() {
 //        cout << ba_hat[i](0) << ", " << ba_hat[i](1) << ", " << ba_hat[i](2) << endl;
 //        cout << "bias_gyro: " << bias_gyro(0) << ", " << bias_gyro(1) << ", " << bias_gyro(2) << ", ";
 //        cout << bg_hat[i](0) << ", " << bg_hat[i](1) << ", " << bg_hat[i](2) << endl;
+//        cout << "ang_var: " << eskf_rtk.get_covariance_matrix()[6][6] << ", " << eskf_rtk.get_covariance_matrix()[7][7] << ", " << eskf_rtk.get_covariance_matrix()[8][8] << endl;
 
     }
 //    clock_t t2 = clock();
