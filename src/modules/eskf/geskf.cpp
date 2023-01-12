@@ -6,8 +6,7 @@
 #include <iostream>
 
 namespace eskf {
-    void GESKF::predict_covariance(const Vector3f &delta_ang, const Vector3f &delta_vel,
-                                   const Vector<bool, 3> &gyro_clipping, const Vector<bool, 3> &acc_clipping) {
+    void GESKF::predict_covariance(const ImuSample &imu_sample) {
         // -Rnb
         float mR00 = -_Rnb(0, 0);
         float mR01 = -_Rnb(0, 1);
@@ -220,9 +219,9 @@ namespace eskf {
         float bad_var = sq(_params.acc_noise) * _dt2;
         float good_var = sq(_params.acc_bad_noise) * _dt2;
         Vector3f var_delta_vel;
-        var_delta_vel(0) = acc_clipping(0) ? bad_var : good_var;
-        var_delta_vel(1) = acc_clipping(1) ? bad_var : good_var;
-        var_delta_vel(2) = acc_clipping(2) ? bad_var : good_var;
+        var_delta_vel(0) = imu_sample.delta_vel_clipping[0] ? bad_var : good_var;
+        var_delta_vel(1) = imu_sample.delta_vel_clipping[1] ? bad_var : good_var;
+        var_delta_vel(2) = imu_sample.delta_vel_clipping[2] ? bad_var : good_var;
         float sx = var_delta_vel(0);
         float sy = var_delta_vel(1);
         float sz = var_delta_vel(2);
@@ -249,9 +248,9 @@ namespace eskf {
         bad_var = _params.gyro_bad_noise * _params.gyro_bad_noise * _dt2;
         good_var = _params.gyro_noise * _params.gyro_noise * _dt2;
         Vector3f var_delta_ang;
-        var_delta_ang(0) = gyro_clipping(0) ? bad_var : good_var;
-        var_delta_ang(1) = gyro_clipping(1) ? bad_var : good_var;
-        var_delta_ang(2) = gyro_clipping(2) ? bad_var : good_var;
+        var_delta_ang(0) = imu_sample.delta_ang_clipping[0] ? bad_var : good_var;
+        var_delta_ang(1) = imu_sample.delta_ang_clipping[1] ? bad_var : good_var;
+        var_delta_ang(2) = imu_sample.delta_ang_clipping[2] ? bad_var : good_var;
         sx = var_delta_ang(0);
         sy = var_delta_ang(1);
         sz = var_delta_ang(2);

@@ -34,17 +34,6 @@ namespace eskf {
 
 //        activated_sensor_u activated_sensor {0xffff};   ///< 激活了那些传感器
 
-        /* 传感器参数 */
-
-        // 传感器延迟
-        float gps_delay_ms {110.f};
-        float ev_delay_ms {175.0f};
-        float flow_delay_ms {5.0f};
-        float baro_delay_ms {0.0f};
-        float range_delay_ms {5.0f};
-        float mag_delay_ms {0.0f};
-        float airspeed_delay_ms {100.0f};
-
         // 零漂时间常数
         float gyro_bias_tau_inv {0.0f};     ///< 陀螺仪偏移的时间常数
         float acc_bias_tau_inv {0.003f};	///< 加速度计偏移的时间常数
@@ -146,7 +135,32 @@ namespace eskf {
         float var_mag_bias_min {1e-6f};         ///< 磁力计偏移的最小方差
         float var_wind_min {1e-6f};             ///< 风速的最小方差
 
-        /* 传感器安装距离 */
+
+        float rng_gnd_clearance {0.1f};       ///< 测距仪最小距离
+    };
+
+    struct RunnerParameters {
+        /* 传感器相对于imu最新的采样数据的的最大时间间隔(us) */
+        static constexpr uint64_t GPS_MAX_INTERVAL {500000};    ///< GPS量测的最大时间间隔 (us), 默认为0.5s
+        static constexpr uint64_t BARO_MAX_INTERVAL {200000};   ///< 气压计的最大时间间隔 (us), 默认为0.2s
+        static constexpr uint64_t RANGE_MAX_INTERVAL {200000};  ///< 测距仪的最大时间间隔 (us), 默认为0.2s
+        static constexpr uint64_t FLOW_MAX_INTERVAL {200000};   ///< 光流的最大时间间隔 (us), 默认为0.2s
+        static constexpr uint64_t EV_MAX_INTERVAL {200000};     ///< 外部视觉的最大时间间隔 (us), 默认为0.2s
+        static constexpr uint64_t MAG_MAX_INTERVAL {200000};    ///< 磁力计的最大时间间隔 (us), 默认为0.2s
+
+        static constexpr uint64_t BADACC_PROBATION {1000000};   ///< 持续多少时间内没有检测出过垂直加速度异常, 才能认为是垂直加速度正常 (us), 默认为1s
+        static constexpr uint64_t HGT_FUSE_TIMEOUT {5000000};   ///< 超过多少时间没进行高度融合, 则需要重置eskf的高度状态, 默认为5s
+
+        /* 传感器延迟(ms) */
+        float gps_delay_ms {110.f};
+        float ev_delay_ms {175.0f};
+        float flow_delay_ms {5.0f};
+        float baro_delay_ms {0.0f};
+        float range_delay_ms {5.0f};
+        float mag_delay_ms {0.0f};
+        float airspeed_delay_ms {100.0f};
+
+        /* 传感器安装距离(m) */
         Vector3f imu_pos_body;			///< imu在机体系的坐标
         Vector3f gps0_pos_body;  		///< GPS-0天线在机体系的坐标
         Vector3f gps1_pos_body;  		///< GPS-1天线在机体系的坐标
@@ -155,11 +169,17 @@ namespace eskf {
         Vector3f range_pos_body;		///< 测距仪在机体系的坐标
         Vector3f baro_pos_body;			///< 气压计在机体系的坐标
 
-        float rng_gnd_clearance {0.1f};       ///< 测距仪最小距离
+        bool check_mag_strength {true};
+
+    };
+
+    enum class velocity_frame_t : uint8_t {
+        LOCAL_FRAME_FRD,
+        BODY_FRAME_FRD
     };
 
     struct BaseSample {
-        uint64_t time_usec{0};	///< 量测时间 (us)
+        uint64_t time_us{0};	///< 量测时间 (us)
     };
 
     struct OutputSample : BaseSample {
@@ -173,6 +193,7 @@ namespace eskf {
         Vector3f    delta_vel {};		///< delta velocity in body frame (integrated accelerometer measurements) (m/sec)
         float       delta_ang_dt {0.f};	///< delta angle integration period (sec)
         float       delta_vel_dt {0.f};	///< delta velocity integration period (sec)
+        bool        delta_ang_clipping[3] {}; ///< true (per axis) if this sample contained any accelerometer clipping
         bool        delta_vel_clipping[3] {}; ///< true (per axis) if this sample contained any accelerometer clipping
     };
 
@@ -186,16 +207,16 @@ namespace eskf {
     };
 
     struct MagSample : BaseSample {
-        Vector3f    mag;	///< NED magnetometer body frame measurements (Gauss)
+        Vector3f    mag;	///< 磁力计的量测值 (Gauss)
     };
 
     struct BaroSample : BaseSample {
-        float       hgt{};	///< pressure altitude above sea level (m)
+        float       hgt{};	///< 气压计的量测高度 (m)
     };
 
     struct RangeSample : BaseSample {
-        float       rng{};	    ///< range (distance to ground) measurement (m)
-        int8_t	    quality{};    ///< Signal quality in percent (0...100%), where 0 = invalid signal, 100 = perfect signal, and -1 = unknown signal quality.
+        float       rng{};	    ///< 测距仪测地距离 (m)
+        int8_t	    quality{};    ///< 信号质量的百分比 (0...100%), where 0 = 无效信号, 100 = 最高质量, and -1 = 质量未知.
     };
 
     struct AirspeedSample : BaseSample {
@@ -217,7 +238,7 @@ namespace eskf {
         Vector3f posVar;	///< XYZ position variances (m**2)
         Matrix3f velCov;	///< XYZ velocity covariances ((m/sec)**2)
         float angVar{};		///< angular heading variance (rad**2)
-//        velocity_frame_t vel_frame = velocity_frame_t::BODY_FRAME_FRD;
+        velocity_frame_t vel_frame = velocity_frame_t::BODY_FRAME_FRD;
         uint8_t reset_counter{0};
     };
 

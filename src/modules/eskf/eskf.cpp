@@ -61,31 +61,42 @@ namespace eskf {
         _P[23][23] = var_wind;
     }
 
-    void ESKF::predict_state(const Vector3f &delta_ang, const Vector3f &delta_vel) {
+    void ESKF::predict_state(const ImuSample &imu_sample) {
+        /*
+         * 计算eskf运行的平均时间间隔
+         * 平均运行时间 = 采样时间的低通滤波值
+         * 需要把采样时间限制在设定的采样时间的50%和200%之间, 以保证平均运行时间不会有很大的跳变
+         * */
+        float dt_init = float(_params.eskf_update_interval_us) * 1e-6f;
+        float dt_eskf = 0.5f * (imu_sample.delta_ang_dt + imu_sample.delta_ang_dt);
+        dt_eskf = math::constrain(dt_eskf, 0.5f * dt_init, 2.0f * dt_init);
+        dt_eskf = 0.99f * _dt + 0.01f * dt_eskf;
+        set_dt(dt_eskf);    // _dt, _dt2, _dt4
+
         // Δv_corr = Δv - b_Δv
-        _delta_vel_corr = delta_vel - _state.delta_vel_bias;
+        _delta_vel_corr = imu_sample.delta_vel - _state.delta_vel_bias;
         // a_corr = Δv_corr / Δt
-        _acc_corr = _delta_vel_corr / _dt;
+        _acc_corr = _delta_vel_corr / imu_sample.delta_vel_dt;
 
         // Δv_nav = Rnb * Δv_corr
         _delta_vel_corr_nav = _Rnb * _delta_vel_corr;
         // a_nav = Δv_nav / Δt
-        _acc_nav = _delta_vel_corr_nav / _dt;
+        _acc_nav = _delta_vel_corr_nav / imu_sample.delta_vel_dt;
 
         // 上一时刻的速度
         const Vector3f v_last = _state.vel;
 
         // v' = v + Δv
         _state.vel += _delta_vel_corr_nav;
-        _state.vel(2) += _state.grav * _dt;
+        _state.vel(2) += _state.grav * imu_sample.delta_vel_dt;
 
         // p' = p + 0.5 * (v' + v) * Δt
-        _state.pos += 0.5f * (_state.vel + v_last) * _dt;
+        _state.pos += 0.5f * (_state.vel + v_last) * imu_sample.delta_vel_dt;
 
         // Δθ_corr = Δθ - b_Δθ
-        _delta_ang_corr = delta_ang - _state.delta_ang_bias;
+        _delta_ang_corr = imu_sample.delta_ang - _state.delta_ang_bias;
         // ω_corr = Δθ_corr / Δt
-        _gyro_corr = _delta_ang_corr / _dt;
+        _gyro_corr = _delta_ang_corr / imu_sample.delta_ang_dt;
 
         // Δq = Exp((w - bg) * Δt)
         Quatf delta_q {};

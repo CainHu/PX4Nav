@@ -13,8 +13,7 @@ namespace eskf {
         explicit GESKF(Parameters &params) : ESKF(params) {};
 
         // Prior
-        void predict_covariance(const Vector3f &delta_ang, const Vector3f &delta_vel,
-                                const Vector<bool, 3> &gyro_clipping, const Vector<bool, 3> &acc_clipping) override;
+        void predict_covariance(const ImuSample &imu_sample) override;
 
         // Posterior
         uint8_t fuse_pos_horz(const Vector2f &pos, const Vector3f &offset_body, const Vector3f &offset_nav,

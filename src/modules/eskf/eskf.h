@@ -65,7 +65,7 @@ namespace eskf {
          * @param delta_ang - 陀螺仪角度增量
          * @param delta_vel - 加速度计速度增量
          */
-        void predict_state(const Vector3f &delta_ang, const Vector3f &delta_vel);
+        void predict_state(const ImuSample &imu_sample);
 
         /*!
          * 计算 P = F' * P * F + Q
@@ -75,8 +75,7 @@ namespace eskf {
          * @param gyro_clipping - 陀螺仪是否达到限幅
          * @param acc_clipping - 加速度计是否达到限幅
          */
-        virtual void predict_covariance(const Vector3f &delta_ang, const Vector3f &delta_vel,
-                                        const Vector<bool, 3> &gyro_clipping, const Vector<bool, 3> &acc_clipping) = 0;
+        virtual void predict_covariance(const ImuSample &imu_sample) = 0;
 
         // Posterior
         virtual uint8_t fuse_pos_horz(const Vector2f &pos, const Vector3f &offset_body, const Vector3f &offset_nav,
