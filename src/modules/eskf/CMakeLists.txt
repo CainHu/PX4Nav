@@ -1,4 +1,4 @@
-add_library(ecl_eskf eskf.cpp geskf.cpp utils.cpp imu_down_sampler.cpp eskf_runner.h)
+add_library(ecl_eskf eskf.cpp geskf.cpp utils.cpp imu_down_sampler.cpp eskf_runner.h hgt_sensor_kf.cpp)
 
 target_include_directories(ecl_eskf PUBLIC ${ECL_SOURCE_DIR})
 

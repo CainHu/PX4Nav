@@ -7,6 +7,7 @@
 
 #include <matrix/math.hpp>
 #include <geo/geo.h>
+#include <dsp/butterworth.hpp>
 
 namespace eskf {
     using matrix::AxisAnglef;
@@ -17,8 +18,44 @@ namespace eskf {
     using matrix::Vector2f;
     using matrix::Vector3f;
     using matrix::wrap_pi;
+    using digital_signal_processing::Butterworth;
 
     static constexpr float sq(float var) { return var * var; }
+
+    class LowPassFilter3d {
+    public:
+        LowPassFilter3d(float dt, float cutoff) : _filter{Butterworth<1>(dt, cutoff), Butterworth<1>(dt, cutoff), Butterworth<1>(dt, cutoff)} {};
+
+        Vector3f operator()(const Vector3f &u) {
+            return {_filter[0](u(0)), _filter[0](u(1)), _filter[0](u(2))};
+        }
+
+        void set_fs_and_cutoff(float fs, float cutoff) {
+            _filter[0].set_fs_and_cutoff(fs, cutoff);
+            _filter[1].set_fs_and_cutoff(fs, cutoff);
+            _filter[2].set_fs_and_cutoff(fs, cutoff);
+        }
+
+        void set_fs(float fs) {
+            _filter[0].set_fs(fs);
+            _filter[1].set_fs(fs);
+            _filter[2].set_fs(fs);
+        }
+
+        void set_cutoff(float cutoff) {
+            _filter[0].set_cutoff(cutoff);
+            _filter[1].set_cutoff(cutoff);
+            _filter[2].set_cutoff(cutoff);
+        }
+
+        void reset_filter_state() {
+            _filter[0].reset_filter_state();
+            _filter[1].reset_filter_state();
+            _filter[2].reset_filter_state();
+        }
+    private:
+        Butterworth<1> _filter[3];
+    };
 
     template<typename T, uint8_t N>
     class Queue {
@@ -73,7 +110,8 @@ namespace eskf {
                     }
                     _size = i;
 
-                    _data[index].time_us = 0;
+                    // TODO: 需要在作处理
+//                    _data[index].time_us = 0;
 
                     return true;
                 }

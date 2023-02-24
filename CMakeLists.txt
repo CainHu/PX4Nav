@@ -38,3 +38,4 @@ add_executable(ecl main.cpp)
 
 target_link_libraries(ecl ecl_eskf)
 target_link_libraries(ecl ecl_traj_sim)
+target_link_libraries(ecl ecl_ahrs)

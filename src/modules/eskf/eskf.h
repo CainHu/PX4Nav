@@ -82,6 +82,9 @@ namespace eskf {
                                       const float &gate, const float &noise_std, FuseData<2> &fuse_data) = 0;
         virtual uint8_t fuse_pos_vert(const float &pos, const Vector3f &offset_body, const Vector3f &offset_nav,
                                       const float &gate, const float &noise_std, FuseData<1> &fuse_data) = 0;
+        virtual uint8_t fuse_vel(const Vector3f &vel, const Vector3f &offset_body, const Vector3f &offset_nav,
+                                 const Vector3f &w_cross_offset_body, const Vector3f &w_cross_offset_nav,
+                                 const float &gate, const float &noise_std, FuseData<3> &fuse_data) = 0;
         virtual uint8_t fuse_vel_horz(const Vector2f &vel, const Vector3f &offset_body, const Vector3f &offset_nav,
                                       const Vector3f &w_cross_offset_body, const Vector3f &w_cross_offset_nav,
                                       const float &gate, const float &noise_std, FuseData<2> &fuse_data) = 0;
@@ -91,11 +94,11 @@ namespace eskf {
         virtual uint8_t fuse_vel_body_horz(const Vector2f &vel, const Vector3f &offset_body, const Vector3f &offset_nav,
                                            const Vector3f &w_cross_offset_body, const Vector3f &w_cross_offset_nav,
                                            const float &gate, const float &noise_std, FuseData<2> &fuse_data) = 0;
-        virtual uint8_t fuse_mag_body(const Vector3f &mag_body, const float &gate, const float &noise_std, FuseData<3> &fuse_data) = 0;
+        virtual uint8_t fuse_mag_body(const Vector3f &mag_body, const float &gate, const float &noise_std, FuseData<3> &fuse_data, bool attitude_inhibit=false) = 0;
         virtual uint8_t fuse_mag_norm(const float &mag_norm, const float &gate, const float &noise_std, FuseData<1> &fuse_data) = 0;
         virtual uint8_t fuse_mag_ang(const Vector2f &mag_ang, const float &gate, const float &noise_std, FuseData<2> &fuse_data) = 0;
         virtual uint8_t fuse_flow(const Vector2f &flow, const Vector3f &offset_body, const Vector3f &offset_nav, const float &gate, const float &noise_std, FuseData<2> &fuse_data) = 0;
-        virtual uint8_t fuse_range(const float &range, const Vector3f &offset_body, const Vector3f &offset_nav, const float &gate, const float &noise_std, FuseData<1> &fuse_data) = 0;
+        virtual uint8_t fuse_range(const float &range, const Vector3f &offset_body, const Vector3f &offset_nav, const float &gate, const float &noise_std, FuseData<1> &fuse_data, bool attitude_inhibit=false) = 0;
 
         /*!
          * s = s + δs
@@ -106,6 +109,13 @@ namespace eskf {
          * 把协方差矩阵投影到新的state中
          */
         virtual void correct_covariance() = 0;
+
+        void calculate_dist_bottom_imu(float range, const Vector3f &range_offset_nav);
+        void calculate_baro_imu(float baro, const Vector3f &baro_offset_nav);
+
+        void correct_terrain(float gps_hgt_imu);
+
+        void correct_baro_bias(float gps_hgt_imu);
 
         // Resetters
         /*!
@@ -124,7 +134,7 @@ namespace eskf {
             _state.wind.setZero();
             _Rnb.setIdentity();
 
-            _terrain_vpos = 0.f;
+            _terrain = 0.f;
             _imu_hgt = 0.f;
 
             _flow_vel_body.setZero();
@@ -297,9 +307,14 @@ namespace eskf {
             enable_estimation_acc_z_bias();
         }
         void enable_estimation_gravity() { _control_status.flags.grav = true; };
-        void enable_estimation_magnet() { _control_status.flags.mag_norm = true; };
-        void enable_estimation_declination() { _control_status.flags.mag_ang = true; };
-        void enable_estimation_magnet_bias() { _control_status.flags.mag_bias = true; };
+        void enable_estimation_mag() {
+            _control_status.flags.mag_norm = true;
+            _control_status.flags.mag_ang = true;
+            _control_status.flags.mag_bias = true;
+        }
+        void enable_estimation_mag_norm() { _control_status.flags.mag_norm = true; };
+        void enable_estimation_mag_ang() { _control_status.flags.mag_ang = true; };
+        void enable_estimation_mag_bias() { _control_status.flags.mag_bias = true; };
         void enable_estimation_wind() { _control_status.flags.wind = true; } ;
 
         void disable_estimation_acc_x_bias() {
@@ -331,6 +346,14 @@ namespace eskf {
             reset_accmulator<1>(15);
             regular_covariance_to_symmetric<1>(15);
         };
+        void disable_estimation_mag() {
+            _control_status.flags.mag_norm = false;
+            _control_status.flags.mag_ang = false;
+            _control_status.flags.mag_bias = false;
+            reset_covariance_matrix<6>(16, 0.f);
+            reset_accmulator<6>(16);
+            regular_covariance_to_symmetric<6>(16);
+        }
         void disable_estimation_mag_norm() {
             _control_status.flags.mag_norm = false;
             reset_covariance_matrix<1>(16, 0.f);
@@ -343,7 +366,7 @@ namespace eskf {
             reset_accmulator<2>(17);
             regular_covariance_to_symmetric<2>(17);
         };
-        void disable_estimation_magnet_bias() {
+        void disable_estimation_mag_bias() {
             _control_status.flags.mag_bias = false;
             reset_covariance_matrix<3>(19, 0.f);
             reset_accmulator<3>(19);
@@ -371,6 +394,12 @@ namespace eskf {
         float get_gravity() const { return _state.grav; };
         float get_magnet_norm() const { return _state.mag_norm; };
         const Vector2f &get_magnet_angle() const { return _state.mag_ang; };
+        Vector3f get_magnet_earth() const {
+            const float cos_y = cosf(_state.mag_ang(0));
+            return {_state.mag_norm * cosf(_state.mag_ang(1)) * cos_y,
+                    _state.mag_norm * sinf(_state.mag_ang(1)) * cos_y,
+                    -_state.mag_norm * sinf(_state.mag_ang(0))};
+        }
         const Vector3f &get_magnet_bias() const { return _state.mag_bias; };
         const Vector2f &get_wind() const { return _state.wind; };
         const StateSample &get_state() const { return _state; };
@@ -380,7 +409,7 @@ namespace eskf {
         float get_dt() const { return _dt; };
         const ErrorState &get_error_state() const { return _error_state; };
         const float (*get_covariance_matrix() const)[DIM] { return _P; };
-        float get_terrain_vpos() const { return _terrain_vpos; };
+        float get_terrain() const { return _terrain; };
         float get_imu_hgt() const { return _imu_hgt; };
         const Vector3f &get_delta_ang_corr() const { return _delta_ang_corr; };
         const Vector3f &get_gyro_corr() const { return _gyro_corr; };
@@ -397,13 +426,16 @@ namespace eskf {
 
 
         // Setters
-        void set_dt(const float dt) { _dt = dt; _dt2 = dt * dt; _dt4 = _dt2 * _dt2; };
+//        void set_dt(const float &dt) { _dt = dt; _dt2 = dt * dt; _dt4 = _dt2 * _dt2; };
+        void set_dt(float dt) { _dt = dt; _dt2 = dt * dt; _dt4 = _dt2 * _dt2; };
         void set_position(const Vector3f &p) { _state.pos = p; };
         void set_pos_horz(const Vector2f &p) { _state.pos.xy() = p; };
-        void set_pos_vert(const float &p) { _state.pos(2) = p; };
+//        void set_pos_vert(const float &p) { _state.pos_horz(2) = p; };
+        void set_pos_vert(float p) { _state.pos(2) = p; };
         void set_velocity(const Vector3f &v) { _state.vel = v; };
         void set_vel_horz(const Vector2f &v) { _state.vel.xy() = v; };
-        void set_vel_vert(const float &v) { _state.vel(2) = v; };
+//        void set_vel_vert(const float &v) { _state.vel(2) = v; };
+        void set_vel_vert(float v) { _state.vel(2) = v; };
         void set_attitude(const Dcmf &R) { _state.quat_nominal = R; _Rnb = R; };
         void set_attitude(const Quatf &q) { _state.quat_nominal = q; _Rnb = q; };
         void set_attitude(const AxisAnglef &axis_ang) { _state.quat_nominal = axis_ang; _Rnb = axis_ang; };
@@ -411,12 +443,21 @@ namespace eskf {
         void set_delta_ang_bias(const Vector3f &b_delta_ang) { _state.delta_ang_bias = b_delta_ang; };
         void set_acc_bias(const Vector3f &ba) { _state.delta_vel_bias = ba * _dt; };
         void set_delta_vel_bias(const Vector3f &b_delta_vel) { _state.delta_vel_bias = b_delta_vel; };
-        void set_gravity(const float g) { _state.grav = g; };
-        void set_mag_norm(const float norm) { _state.mag_norm = norm; };
+//        void set_gravity(const float &g) { _state.grav = g; };
+        void set_gravity(float g) { _state.grav = g; };
+//        void set_mag_norm(const float &norm) { _state.mag_norm = norm; };
+        void set_mag_norm(float norm) { _state.mag_norm = norm; };
         void set_mag_ang(const Vector2f &ang) { _state.mag_ang = ang; };
+        void set_mag_earth(const Vector3f &mag_earth) {
+            _state.mag_norm = mag_earth.norm();
+            _state.mag_ang(0) = -asinf(mag_earth(2) / _state.mag_norm);
+            _state.mag_ang(1) = atan2f(mag_earth(1), mag_earth(0));
+        }
         void set_bias_magnet(const Vector3f &b_mag) { _state.mag_bias = b_mag; };
         void set_wind(const Vector2f &w) { _state.wind = w; };
         void set_state(const StateSample &state) { _state = state; };
+        void set_baro_imu(float baro_imu) { _baro_imu = baro_imu; };
+        void set_dist_bottom_imu(float dist_bottom_imu) { _dist_bottom_imu = dist_bottom_imu; };
 
         void set_proc_std_pos(const float &std) { _Q[0] = _Q[1] = _Q[2] = std * std; };
         void set_proc_std_pos_horz(const float &std) { _Q[0] = _Q[1] = std * std; };
@@ -454,8 +495,13 @@ namespace eskf {
         float _Q[DIM] {};          ///< 过程噪声协方差矩阵Q
 
         /* 地形ESKF */
-        float _terrain_vpos {0.f}; ///< 地形高度
-        float _imu_hgt {0.f};      ///< imu距地高度
+        float _dist_bottom_imu {0.f};    ///< 测距仪折算到imu处的对地高度, 向上为正
+        float _terrain {0.f};            ///< 地形高度, 向下为正: 仿地高度(向上为正) = _terrain - eskf.pos.z
+        float _imu_hgt {0.f};            ///< imu距地高度, 向上为正
+
+        /* 气压计偏移ESKF */
+        float _baro_imu {0.f};          ///< 气压计折算到imu处的气压高度, 向上为正
+        float _baro_bias {0.f};         ///< 气压计偏移, 向上为正: -eskf.pos.z = baro - baro_bias
 
         /* imu */
         Vector3f _delta_ang_corr;   ///< 纠偏后的速度增量(对应陀螺仪的量测)

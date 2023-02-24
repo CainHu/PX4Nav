@@ -3,6 +3,7 @@
 //
 
 #include "imu_down_sampler.h"
+#include <iostream>
 
 namespace eskf {
     void ImuDownSampler::reset() {
@@ -34,6 +35,8 @@ namespace eskf {
         _imu_down_sampled.delta_vel_clipping[1] |= imu_sample_new.delta_vel_clipping[1];
         _imu_down_sampled.delta_vel_clipping[2] |= imu_sample_new.delta_vel_clipping[2];
 
+//        std::cout << "_imu_down_sampled.delta_ang_dt = " << _imu_down_sampled.delta_ang_dt << std::endl;
+
         const Dcmf dR(_delta_q);
         const Vector3f dv = dR * imu_sample_new.delta_vel;
         _delta_pos += (_delta_vel + 0.5f * dv) * imu_sample_new.delta_vel_dt;
@@ -44,6 +47,8 @@ namespace eskf {
         _delta_q.normalize();
 
         ++_accumulated_samples;
+
+//        std::cout << _accumulated_samples << std::endl;
 
         // _accumulated_samples >= _required_samples && _imu_down_sampled.delta_ang_dt > _min_dt_s = true
         // 发生在imu采样率突然变快的时候, 此时很早就有_accumulated_samples >= _required_samples

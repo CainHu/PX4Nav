@@ -20,6 +20,9 @@ namespace eskf {
                               const float &gate, const float &noise_std, FuseData<2> &fuse_data) override;
         uint8_t fuse_pos_vert(const float &pos, const Vector3f &offset_body, const Vector3f &offset_nav,
                               const float &gate, const float &noise_std, FuseData<1> &fuse_data) override;
+        uint8_t fuse_vel(const Vector3f &vel, const Vector3f &offset_body, const Vector3f &offset_nav,
+                         const Vector3f &w_cross_offset_body, const Vector3f &w_cross_offset_nav,
+                         const float &gate, const float &noise_std, FuseData<3> &fuse_data) override;
         uint8_t fuse_vel_horz(const Vector2f &vel, const Vector3f &offset_body, const Vector3f &offset_nav,
                               const Vector3f &w_cross_offset_body, const Vector3f &w_cross_offset_nav,
                               const float &gate, const float &noise_std, FuseData<2> &fuse_data) override;
@@ -29,11 +32,11 @@ namespace eskf {
         uint8_t fuse_vel_body_horz(const Vector2f &vel, const Vector3f &offset_body, const Vector3f &offset_nav,
                                    const Vector3f &w_cross_offset_body, const Vector3f &w_cross_offset_nav,
                                    const float &gate, const float &noise_std, FuseData<2> &fuse_data) override;
-        uint8_t fuse_mag_body(const Vector3f &mag_body, const float &gate, const float &noise_std, FuseData<3> &fuse_data) override;
+        uint8_t fuse_mag_body(const Vector3f &mag_body, const float &gate, const float &noise_std, FuseData<3> &fuse_data, bool attitude_inhibit) override;
         uint8_t fuse_mag_norm(const float &mag_norm, const float &gate, const float &noise_std, FuseData<1> &fuse_data) override;
         uint8_t fuse_mag_ang(const Vector2f &mag_ang, const float &gate, const float &noise_std, FuseData<2> &fuse_data) override;
         uint8_t fuse_flow(const Vector2f &flow, const Vector3f &offset_body, const Vector3f &offset_nav, const float &gate, const float &noise_std, FuseData<2> &fuse_data) override;
-        uint8_t fuse_range(const float &range, const Vector3f &offset_body, const Vector3f &offset_nav, const float &gate, const float &noise_std, FuseData<1> &fuse_data) override;
+        uint8_t fuse_range(const float &range, const Vector3f &offset_body, const Vector3f &offset_nav, const float &gate, const float &noise_std, FuseData<1> &fuse_data, bool attitude_inhibit) override;
 
         /*!
          * p = p + δp

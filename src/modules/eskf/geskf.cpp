@@ -841,6 +841,287 @@ namespace eskf {
         return flag;
     }
 
+    uint8_t GESKF::fuse_vel(const Vector3f &vel, const Vector3f &offset_body, const Vector3f &offset_nav, const Vector3f &w_cross_offset_body, const Vector3f &w_cross_offset_nav, const float &gate, const float &noise_std, FuseData<3> &fuse_data) {
+        uint8_t flag = 0;
+        float HP[DIM];
+
+        const float &v_nav_x = w_cross_offset_nav(0);
+        const float &v_nav_y = w_cross_offset_nav(1);
+        const float &v_nav_z = w_cross_offset_nav(2);
+
+        // x轴, H = [O, I, -(R*w^dis)^, R*dis^, O, O]
+        float Hx = (_Rnb(0, 1) * offset_body(2) - _Rnb(0, 2) * offset_body(1)) / _dt;
+        float Hy = (_Rnb(0, 2) * offset_body(0) - _Rnb(0, 0) * offset_body(2)) / _dt;
+        float Hz = (_Rnb(0, 0) * offset_body(1) - _Rnb(0, 1) * offset_body(0)) / _dt;
+
+        HP[0] = _P[0][3] + _P[0][7] * v_nav_z - _P[0][8] * v_nav_y + _P[0][9] * Hx + _P[0][10] * Hy + _P[0][11] * Hz;
+        HP[1] = _P[1][3] + _P[1][7] * v_nav_z - _P[1][8] * v_nav_y + _P[1][9] * Hx + _P[1][10] * Hy + _P[1][11] * Hz;
+        HP[2] = _P[2][3] + _P[2][7] * v_nav_z - _P[2][8] * v_nav_y + _P[2][9] * Hx + _P[2][10] * Hy + _P[2][11] * Hz;
+        HP[3] = _P[3][3] + _P[3][7] * v_nav_z - _P[3][8] * v_nav_y + _P[3][9] * Hx + _P[3][10] * Hy + _P[3][11] * Hz;
+        HP[4] = _P[3][4] + _P[4][7] * v_nav_z - _P[4][8] * v_nav_y + _P[4][9] * Hx + _P[4][10] * Hy + _P[4][11] * Hz;
+        HP[5] = _P[3][5] + _P[5][7] * v_nav_z - _P[5][8] * v_nav_y + _P[5][9] * Hx + _P[5][10] * Hy + _P[5][11] * Hz;
+        HP[6] = _P[3][6] + _P[6][7] * v_nav_z - _P[6][8] * v_nav_y + _P[6][9] * Hx + _P[6][10] * Hy + _P[6][11] * Hz;
+        HP[7] = _P[3][7] + _P[7][7] * v_nav_z - _P[7][8] * v_nav_y + _P[7][9] * Hx + _P[7][10] * Hy + _P[7][11] * Hz;
+        HP[8] = _P[3][8] + _P[7][8] * v_nav_z - _P[8][8] * v_nav_y + _P[8][9] * Hx + _P[8][10] * Hy + _P[8][11] * Hz;
+        HP[9] = _P[3][9] + _P[7][9] * v_nav_z - _P[8][9] * v_nav_y + _P[9][9] * Hx + _P[9][10] * Hy + _P[9][11] * Hz;
+        HP[10] = _P[3][10] + _P[7][10] * v_nav_z - _P[8][10] * v_nav_y + _P[9][10] * Hx + _P[10][10] * Hy + _P[10][11] * Hz;
+        HP[11] = _P[3][11] + _P[7][11] * v_nav_z - _P[8][11] * v_nav_y + _P[9][11] * Hx + _P[10][11] * Hy + _P[11][11] * Hz;
+
+        if (_control_status.flags.acc_x_bias) {
+            HP[12] = _P[3][12] + _P[7][12] * v_nav_z - _P[8][12] * v_nav_y + _P[9][12] * Hx + _P[10][12] * Hy + _P[11][12] * Hz;
+        } else {
+            HP[12] = 0.f;
+        }
+
+        if (_control_status.flags.acc_y_bias) {
+            HP[13] = _P[3][13] + _P[7][13] * v_nav_z - _P[8][13] * v_nav_y + _P[9][13] * Hx + _P[10][13] * Hy + _P[11][13] * Hz;
+        } else {
+            HP[13] = 0.f;
+        }
+
+        if (_control_status.flags.acc_z_bias) {
+            HP[14] = _P[3][14] + _P[7][14] * v_nav_z - _P[8][14] * v_nav_y + _P[9][14] * Hx + _P[10][14] * Hy + _P[11][14] * Hz;
+        } else {
+            HP[14] = 0.f;
+        }
+
+        if (_control_status.flags.grav) {
+            HP[15] = _P[3][15] + _P[7][15] * v_nav_z - _P[8][15] * v_nav_y + _P[9][15] * Hx + _P[10][15] * Hy + _P[11][15] * Hz;
+        } else {
+            HP[15] = 0.f;
+        }
+
+        if (_control_status.flags.mag_norm) {
+            HP[16] = _P[3][16] + _P[7][16] * v_nav_z - _P[8][16] * v_nav_y + _P[9][16] * Hx + _P[10][16] * Hy + _P[11][16] * Hz;
+        } else {
+            HP[16] = 0.f;
+        }
+
+        if (_control_status.flags.mag_ang) {
+            HP[17] = _P[3][17] + _P[7][17] * v_nav_z - _P[8][17] * v_nav_y + _P[9][17] * Hx + _P[10][17] * Hy + _P[11][17] * Hz;
+            HP[18] = _P[3][18] + _P[7][18] * v_nav_z - _P[8][18] * v_nav_y + _P[9][18] * Hx + _P[10][18] * Hy + _P[11][18] * Hz;
+        } else {
+            HP[17] = 0.f;
+            HP[18] = 0.f;
+        }
+
+        if (_control_status.flags.mag_bias) {
+            HP[19] = _P[3][19] + _P[7][19] * v_nav_z - _P[8][19] * v_nav_y + _P[9][19] * Hx + _P[10][19] * Hy + _P[11][19] * Hz;
+            HP[20] = _P[3][20] + _P[7][20] * v_nav_z - _P[8][20] * v_nav_y + _P[9][20] * Hx + _P[10][20] * Hy + _P[11][20] * Hz;
+            HP[21] = _P[3][21] + _P[7][21] * v_nav_z - _P[8][21] * v_nav_y + _P[9][21] * Hx + _P[10][21] * Hy + _P[11][21] * Hz;
+        } else {
+            HP[19] = 0.f;
+            HP[20] = 0.f;
+            HP[21] = 0.f;
+        }
+
+        if (_control_status.flags.wind) {
+            HP[22] = _P[3][22] + _P[7][22] * v_nav_z - _P[8][22] * v_nav_y + _P[9][22] * Hx + _P[10][22] * Hy + _P[11][22] * Hz;
+            HP[23] = _P[3][23] + _P[7][23] * v_nav_z - _P[8][23] * v_nav_y + _P[9][23] * Hx + _P[10][23] * Hy + _P[11][23] * Hz;
+        } else {
+            HP[22] = 0.f;
+            HP[23] = 0.f;
+        }
+
+        // H = [O, I, -(R*v_gyro_earth)^, R*dis^, O, O]
+        fuse_data.innov_var(0) = HP[3] + HP[7] * v_nav_z - HP[8] * v_nav_y + HP[9] * Hx + HP[10] * Hy + HP[11] * Hz + sq(noise_std);
+
+        // v + R * (w-bg)^ * dis
+        fuse_data.innov(0) = vel(0) - (_state.vel(0) + v_nav_x);
+
+        fuse_data.test_ratio(0) = sq(fuse_data.innov(0) / gate) / fuse_data.innov_var(0);
+        if (fuse_data.test_ratio(0) > 1.f) {
+            flag |= 1;
+        } else {
+            if (!posterior_estimate(HP, fuse_data.innov_var(0), fuse_data.innov(0))) {
+                flag |= 2;
+            }
+        }
+
+        // y轴, H = [O, I, -(R*w^dis)^, R*dis^, O, O]
+        Hx = (_Rnb(1, 1) * offset_body(2) - _Rnb(1, 2) * offset_body(1)) / _dt;
+        Hy = (_Rnb(1, 2) * offset_body(0) - _Rnb(1, 0) * offset_body(2)) / _dt;
+        Hz = (_Rnb(1, 0) * offset_body(1) - _Rnb(1, 1) * offset_body(0)) / _dt;
+
+        HP[0] = _P[0][4] + _P[0][8] * v_nav_x - _P[0][6] * v_nav_z + _P[0][9] * Hx + _P[0][10] * Hy + _P[0][11] * Hz;
+        HP[1] = _P[1][4] + _P[1][8] * v_nav_x - _P[1][6] * v_nav_z + _P[1][9] * Hx + _P[1][10] * Hy + _P[1][11] * Hz;
+        HP[2] = _P[2][4] + _P[2][8] * v_nav_x - _P[2][6] * v_nav_z + _P[2][9] * Hx + _P[2][10] * Hy + _P[2][11] * Hz;
+        HP[3] = _P[3][4] + _P[3][8] * v_nav_x - _P[3][6] * v_nav_z + _P[3][9] * Hx + _P[3][10] * Hy + _P[3][11] * Hz;
+        HP[4] = _P[4][4] + _P[4][8] * v_nav_x - _P[4][6] * v_nav_z + _P[4][9] * Hx + _P[4][10] * Hy + _P[4][11] * Hz;
+        HP[5] = _P[4][5] + _P[5][8] * v_nav_x - _P[5][6] * v_nav_z + _P[5][9] * Hx + _P[5][10] * Hy + _P[5][11] * Hz;
+        HP[6] = _P[4][6] + _P[6][8] * v_nav_x - _P[6][6] * v_nav_z + _P[6][9] * Hx + _P[6][10] * Hy + _P[6][11] * Hz;
+        HP[7] = _P[4][7] + _P[7][8] * v_nav_x - _P[6][7] * v_nav_z + _P[7][9] * Hx + _P[7][10] * Hy + _P[7][11] * Hz;
+        HP[8] = _P[4][8] + _P[8][8] * v_nav_x - _P[6][8] * v_nav_z + _P[8][9] * Hx + _P[8][10] * Hy + _P[8][11] * Hz;
+        HP[9] = _P[4][9] + _P[8][9] * v_nav_x - _P[6][9] * v_nav_z + _P[9][9] * Hx + _P[9][10] * Hy + _P[9][11] * Hz;
+        HP[10] = _P[4][10] + _P[8][10] * v_nav_x - _P[6][10] * v_nav_z + _P[9][10] * Hx + _P[10][10] * Hy + _P[10][11] * Hz;
+        HP[11] = _P[4][11] + _P[8][11] * v_nav_x - _P[6][11] * v_nav_z + _P[9][11] * Hx + _P[10][11] * Hy + _P[11][11] * Hz;
+
+        if (_control_status.flags.acc_x_bias) {
+            HP[12] = _P[4][12] + _P[8][12] * v_nav_x - _P[6][12] * v_nav_z + _P[9][12] * Hx + _P[10][12] * Hy + _P[11][12] * Hz;
+        } else {
+            HP[12] = 0.f;
+        }
+
+        if (_control_status.flags.acc_y_bias) {
+            HP[13] = _P[4][13] + _P[8][13] * v_nav_x - _P[6][13] * v_nav_z + _P[9][13] * Hx + _P[10][13] * Hy + _P[11][13] * Hz;
+        } else {
+            HP[13] = 0.f;
+        }
+
+        if (_control_status.flags.acc_z_bias) {
+            HP[14] = _P[4][14] + _P[8][14] * v_nav_x - _P[6][14] * v_nav_z + _P[9][14] * Hx + _P[10][14] * Hy + _P[11][14] * Hz;
+        } else {
+            HP[14] = 0.f;
+        }
+
+        if (_control_status.flags.grav) {
+            HP[15] = _P[4][15] + _P[8][15] * v_nav_x - _P[6][15] * v_nav_z + _P[9][15] * Hx + _P[10][15] * Hy + _P[11][15] * Hz;
+        } else {
+            HP[15] = 0.f;
+        }
+
+        if (_control_status.flags.mag_norm) {
+            HP[16] = _P[4][16] + _P[8][16] * v_nav_x - _P[6][16] * v_nav_z + _P[9][16] * Hx + _P[10][16] * Hy + _P[11][16] * Hz;
+        } else {
+            HP[16] = 0.f;
+        }
+
+        if (_control_status.flags.mag_ang) {
+            HP[17] = _P[4][17] + _P[8][17] * v_nav_x - _P[6][17] * v_nav_z + _P[9][17] * Hx + _P[10][17] * Hy + _P[11][17] * Hz;
+            HP[18] = _P[4][18] + _P[8][18] * v_nav_x - _P[6][18] * v_nav_z + _P[9][18] * Hx + _P[10][18] * Hy + _P[11][18] * Hz;
+        } else {
+            HP[17] = 0.f;
+            HP[18] = 0.f;
+        }
+
+        if (_control_status.flags.mag_bias) {
+            HP[19] = _P[4][19] + _P[8][19] * v_nav_x - _P[6][19] * v_nav_z + _P[9][19] * Hx + _P[10][19] * Hy + _P[11][19] * Hz;
+            HP[20] = _P[4][20] + _P[8][20] * v_nav_x - _P[6][20] * v_nav_z + _P[9][20] * Hx + _P[10][20] * Hy + _P[11][20] * Hz;
+            HP[21] = _P[4][21] + _P[8][21] * v_nav_x - _P[6][21] * v_nav_z + _P[9][21] * Hx + _P[10][21] * Hy + _P[11][21] * Hz;
+        } else {
+            HP[19] = 0.f;
+            HP[20] = 0.f;
+            HP[21] = 0.f;
+        }
+
+        if (_control_status.flags.wind) {
+            HP[22] = _P[4][22] + _P[8][22] * v_nav_x - _P[6][22] * v_nav_z + _P[9][22] * Hx + _P[10][22] * Hy + _P[11][22] * Hz;
+            HP[23] = _P[4][23] + _P[8][23] * v_nav_x - _P[6][23] * v_nav_z + _P[9][23] * Hx + _P[10][23] * Hy + _P[11][23] * Hz;
+        } else {
+            HP[22] = 0.f;
+            HP[23] = 0.f;
+        }
+
+        // H = [O, I, -(R*v_gyro_earth)^, R*dis^, O, O]
+        fuse_data.innov_var(1) = HP[4] + HP[8] * v_nav_x - HP[6] * v_nav_z + HP[9] * Hx + HP[10] * Hy + HP[11] * Hz + sq(noise_std);
+
+        // v + R * (w-bg)^ * dis
+        fuse_data.innov(1) = vel(1) - (_state.vel(1) + v_nav_y);
+
+        fuse_data.test_ratio(1) = sq(fuse_data.innov(1) / gate) / fuse_data.innov_var(1);
+        if (fuse_data.test_ratio(1) > 1.f) {
+            flag |= 4;
+        } else {
+            if (!posterior_estimate(HP, fuse_data.innov_var(1), fuse_data.innov(1))) {
+                flag |= 8;
+            }
+        }
+
+        // z轴
+        // H = [O, I, -(R*v_gyro_earth)^, R*dis^, O, O]
+        Hx = (_Rnb(2, 1) * offset_body(2) - _Rnb(2, 2) * offset_body(1)) / _dt;
+        Hy = (_Rnb(2, 2) * offset_body(0) - _Rnb(2, 0) * offset_body(2)) / _dt;
+        Hz = (_Rnb(2, 0) * offset_body(1) - _Rnb(2, 1) * offset_body(0)) / _dt;
+
+        HP[0] = _P[0][5] + _P[0][6] * v_nav_y - _P[0][7] * v_nav_x + _P[0][9] * Hx + _P[0][10] * Hy + _P[0][11] * Hz;
+        HP[1] = _P[1][5] + _P[1][6] * v_nav_y - _P[1][7] * v_nav_x + _P[1][9] * Hx + _P[1][10] * Hy + _P[1][11] * Hz;
+        HP[2] = _P[2][5] + _P[2][6] * v_nav_y - _P[2][7] * v_nav_x + _P[2][9] * Hx + _P[2][10] * Hy + _P[2][11] * Hz;
+        HP[3] = _P[3][5] + _P[3][6] * v_nav_y - _P[3][7] * v_nav_x + _P[3][9] * Hx + _P[3][10] * Hy + _P[3][11] * Hz;
+        HP[4] = _P[4][5] + _P[4][6] * v_nav_y - _P[4][7] * v_nav_x + _P[4][9] * Hx + _P[4][10] * Hy + _P[4][11] * Hz;
+        HP[5] = _P[5][5] + _P[5][6] * v_nav_y - _P[5][7] * v_nav_x + _P[5][9] * Hx + _P[5][10] * Hy + _P[5][11] * Hz;
+        HP[6] = _P[5][6] + _P[6][6] * v_nav_y - _P[6][7] * v_nav_x + _P[6][9] * Hx + _P[6][10] * Hy + _P[6][11] * Hz;
+        HP[7] = _P[5][7] + _P[6][7] * v_nav_y - _P[7][7] * v_nav_x + _P[7][9] * Hx + _P[7][10] * Hy + _P[7][11] * Hz;
+        HP[8] = _P[5][8] + _P[6][8] * v_nav_y - _P[7][8] * v_nav_x + _P[8][9] * Hx + _P[8][10] * Hy + _P[8][11] * Hz;
+        HP[9] = _P[5][9] + _P[6][9] * v_nav_y - _P[7][9] * v_nav_x + _P[9][9] * Hx + _P[9][10] * Hy + _P[9][11] * Hz;
+        HP[10] = _P[5][10] + _P[6][10] * v_nav_y - _P[7][10] * v_nav_x + _P[9][10] * Hx + _P[10][10] * Hy + _P[10][11] * Hz;
+        HP[11] = _P[5][11] + _P[6][11] * v_nav_y - _P[7][11] * v_nav_x + _P[9][11] * Hx + _P[10][11] * Hy + _P[11][11] * Hz;
+
+        if (_control_status.flags.acc_x_bias) {
+            HP[12] = _P[5][12] + _P[6][12] * v_nav_y - _P[7][12] * v_nav_x + _P[9][12] * Hx + _P[10][12] * Hy + _P[11][12] * Hz;
+        } else {
+            HP[12] = 0.f;
+        }
+
+        if (_control_status.flags.acc_y_bias) {
+            HP[13] = _P[5][13] + _P[6][13] * v_nav_y - _P[7][13] * v_nav_x + _P[9][13] * Hx + _P[10][13] * Hy + _P[11][13] * Hz;
+        } else {
+            HP[13] = 0.f;
+        }
+
+        if (_control_status.flags.acc_z_bias) {
+            HP[14] = _P[5][14] + _P[6][14] * v_nav_y - _P[7][14] * v_nav_x + _P[9][14] * Hx + _P[10][14] * Hy + _P[11][14] * Hz;
+        } else {
+            HP[14] = 0.f;
+        }
+
+        if (_control_status.flags.grav) {
+            HP[15] = _P[5][15] + _P[6][15] * v_nav_y - _P[7][15] * v_nav_x + _P[9][15] * Hx + _P[10][15] * Hy + _P[11][15] * Hz;
+        } else {
+            HP[15] = 0.f;
+        }
+
+        if (_control_status.flags.mag_norm) {
+            HP[16] = _P[5][16] + _P[6][16] * v_nav_y - _P[7][16] * v_nav_x + _P[9][16] * Hx + _P[10][16] * Hy + _P[11][16] * Hz;
+        } else {
+            HP[16] = 0.f;
+        }
+
+        if (_control_status.flags.mag_ang) {
+            HP[17] = _P[5][17] + _P[6][17] * v_nav_y - _P[7][17] * v_nav_x + _P[9][17] * Hx + _P[10][17] * Hy + _P[11][17] * Hz;
+            HP[18] = _P[5][18] + _P[6][18] * v_nav_y - _P[7][18] * v_nav_x + _P[9][18] * Hx + _P[10][18] * Hy + _P[11][18] * Hz;
+        } else {
+            HP[17] = 0.f;
+            HP[18] = 0.f;
+        }
+
+        if (_control_status.flags.mag_bias) {
+            HP[19] = _P[5][19] + _P[6][19] * v_nav_y - _P[7][19] * v_nav_x + _P[9][19] * Hx + _P[10][19] * Hy + _P[11][19] * Hz;
+            HP[20] = _P[5][20] + _P[6][20] * v_nav_y - _P[7][20] * v_nav_x + _P[9][20] * Hx + _P[10][20] * Hy + _P[11][20] * Hz;
+            HP[21] = _P[5][21] + _P[6][21] * v_nav_y - _P[7][21] * v_nav_x + _P[9][21] * Hx + _P[10][21] * Hy + _P[11][21] * Hz;
+        } else {
+            HP[19] = 0.f;
+            HP[20] = 0.f;
+            HP[21] = 0.f;
+        }
+
+        if (_control_status.flags.wind) {
+            HP[22] = _P[5][22] + _P[6][22] * v_nav_y - _P[7][22] * v_nav_x + _P[9][22] * Hx + _P[10][22] * Hy + _P[11][22] * Hz;
+            HP[23] = _P[5][23] + _P[6][23] * v_nav_y - _P[7][23] * v_nav_x + _P[9][23] * Hx + _P[10][23] * Hy + _P[11][23] * Hz;
+        } else {
+            HP[22] = 0.f;
+            HP[23] = 0.f;
+        }
+
+        // H = [O, I, -(R*v_gyro_earth)^, R*dis^, O, O]
+        fuse_data.innov_var(0) = HP[5] + HP[6] * v_nav_y - HP[7] * v_nav_x + HP[9] * Hx + HP[10] * Hy + HP[11] * Hz + sq(noise_std);
+
+        // v + R * (w-bg)^ * dis
+        fuse_data.innov(2) = vel(2) - (_state.vel(2) + v_nav_x);
+
+        fuse_data.test_ratio(2) = sq(fuse_data.innov(2) / gate) / fuse_data.innov_var(2);
+        if (fuse_data.test_ratio(2) > 1.f) {
+            flag |= 16;
+        } else {
+            if (!posterior_estimate(HP, fuse_data.innov_var(2), fuse_data.innov(2))) {
+                flag |= 32;
+            }
+        }
+
+        regular_covariance_to_symmetric<DIM>(0);
+
+        return flag;
+    }
+
     uint8_t GESKF::fuse_vel_horz(const Vector2f &vel, const Vector3f &offset_body, const Vector3f &offset_nav, const Vector3f &w_cross_offset_body, const Vector3f &w_cross_offset_nav, const float &gate, const float &noise_std, FuseData<2> &fuse_data) {
         uint8_t flag = 0;
         float HP[DIM];
@@ -1529,133 +1810,473 @@ namespace eskf {
         return flag;
     }
 
-    uint8_t GESKF::fuse_mag_body(const Vector3f &mag_body, const float &gate, const float &noise_std, FuseData<3> &fuse_data) {
+//    uint8_t GESKF::fuse_mag_body(const Vector3f &mag_body, const float &gate, const float &noise_std, FuseData<3> &fuse_data, bool attitude_inhibit) {
+//        uint8_t flag = 0;
+//        float HP[DIM];
+//
+//        // Hb = y - bm
+//        const Vector3f mag_corr = mag_body - _state.mag_bias;
+//
+//        const float cos_y = cosf(_state.mag_ang(0)), sin_y = sinf(_state.mag_ang(0));
+//        const float cos_z = cosf(_state.mag_ang(1)), sin_z = sinf(_state.mag_ang(1));
+//
+//        // Rz * Ry * ex
+//        const float rz_ry_ex[3] = {cos_z * cos_y, sin_z * cos_y, -sin_y};
+//
+//        // 1 / H
+//        const float h_inv = (_state.mag_norm < 1e-6f) ? 1.f / _params.mag_norm : 1.f / _state.mag_norm;
+//
+//        for (uint8_t dim = 0; dim < 3; ++dim) {
+//            /*
+//            K = P * H * (H * P * H' + R)^-1
+//            x = x + K * (y - h)
+//            P = (I - K * H) * P
+//            where, H = [O, O, R'*m^, O, O, O, R', I, O]
+//                h = R' * m
+//            */
+//
+//            // R' * RZ * RY * ex
+//            const float rt_rz_ry_ex = _Rnb(0, dim) * rz_ry_ex[0] + _Rnb(1, dim) * rz_ry_ex[1] + _Rnb(2, dim) * rz_ry_ex[2];
+//
+//            // R' * RZ * RY * ex / H
+//            const float rt_rz_ry_ex_h_inv = rt_rz_ry_ex * h_inv;
+//
+//            // R' * (RZ * RY * ex)^
+//            const float rt_rz_ry_ex_hat[3] = {
+//                    _Rnb(1, dim) * rz_ry_ex[2] - _Rnb(2, dim) * rz_ry_ex[1],
+//                    _Rnb(2, dim) * rz_ry_ex[0] - _Rnb(0, dim) * rz_ry_ex[2],
+//                    _Rnb(0, dim) * rz_ry_ex[1] - _Rnb(1, dim) * rz_ry_ex[0]
+//            };
+//
+//            const float param_y = rt_rz_ry_ex_hat[1]*cos_z - sin_z*rt_rz_ry_ex_hat[0];
+//
+//            // H * P  or  P * H'
+//            const uint8_t index = 19 + dim;
+//
+//            HP[0] = _P[0][index] * h_inv + _P[0][6] * rt_rz_ry_ex_hat[0] + _P[0][7] * rt_rz_ry_ex_hat[1] + _P[0][8] * rt_rz_ry_ex_hat[2] + _P[0][16] * rt_rz_ry_ex_h_inv - _P[0][17] * param_y - _P[0][18] * rt_rz_ry_ex_hat[2];
+//            HP[1] = _P[1][index] * h_inv + _P[1][6] * rt_rz_ry_ex_hat[0] + _P[1][7] * rt_rz_ry_ex_hat[1] + _P[1][8] * rt_rz_ry_ex_hat[2] + _P[1][16] * rt_rz_ry_ex_h_inv - _P[1][17] * param_y - _P[1][18] * rt_rz_ry_ex_hat[2];
+//            HP[2] = _P[2][index] * h_inv + _P[2][6] * rt_rz_ry_ex_hat[0] + _P[2][7] * rt_rz_ry_ex_hat[1] + _P[2][8] * rt_rz_ry_ex_hat[2] + _P[2][16] * rt_rz_ry_ex_h_inv - _P[2][17] * param_y - _P[2][18] * rt_rz_ry_ex_hat[2];
+//            HP[3] = _P[3][index] * h_inv + _P[3][6] * rt_rz_ry_ex_hat[0] + _P[3][7] * rt_rz_ry_ex_hat[1] + _P[3][8] * rt_rz_ry_ex_hat[2] + _P[3][16] * rt_rz_ry_ex_h_inv - _P[3][17] * param_y - _P[3][18] * rt_rz_ry_ex_hat[2];
+//            HP[4] = _P[4][index] * h_inv + _P[4][6] * rt_rz_ry_ex_hat[0] + _P[4][7] * rt_rz_ry_ex_hat[1] + _P[4][8] * rt_rz_ry_ex_hat[2] + _P[4][16] * rt_rz_ry_ex_h_inv - _P[4][17] * param_y - _P[4][18] * rt_rz_ry_ex_hat[2];
+//            HP[5] = _P[5][index] * h_inv + _P[5][6] * rt_rz_ry_ex_hat[0] + _P[5][7] * rt_rz_ry_ex_hat[1] + _P[5][8] * rt_rz_ry_ex_hat[2] + _P[5][16] * rt_rz_ry_ex_h_inv - _P[5][17] * param_y - _P[5][18] * rt_rz_ry_ex_hat[2];
+//            HP[6] = _P[6][index] * h_inv + _P[6][6] * rt_rz_ry_ex_hat[0] + _P[6][7] * rt_rz_ry_ex_hat[1] + _P[6][8] * rt_rz_ry_ex_hat[2] + _P[6][16] * rt_rz_ry_ex_h_inv - _P[6][17] * param_y - _P[6][18] * rt_rz_ry_ex_hat[2];
+//            HP[7] = _P[7][index] * h_inv + _P[6][7] * rt_rz_ry_ex_hat[0] + _P[7][7] * rt_rz_ry_ex_hat[1] + _P[7][8] * rt_rz_ry_ex_hat[2] + _P[7][16] * rt_rz_ry_ex_h_inv - _P[7][17] * param_y - _P[7][18] * rt_rz_ry_ex_hat[2];
+//            HP[8] = _P[8][index] * h_inv + _P[6][8] * rt_rz_ry_ex_hat[0] + _P[7][8] * rt_rz_ry_ex_hat[1] + _P[8][8] * rt_rz_ry_ex_hat[2] + _P[8][16] * rt_rz_ry_ex_h_inv - _P[8][17] * param_y - _P[8][18] * rt_rz_ry_ex_hat[2];
+//            HP[9] = _P[9][index] * h_inv + _P[6][9] * rt_rz_ry_ex_hat[0] + _P[7][9] * rt_rz_ry_ex_hat[1] + _P[8][9] * rt_rz_ry_ex_hat[2] + _P[9][16] * rt_rz_ry_ex_h_inv - _P[9][17] * param_y - _P[9][18] * rt_rz_ry_ex_hat[2];
+//            HP[10] = _P[10][index] * h_inv + _P[6][10] * rt_rz_ry_ex_hat[0] + _P[7][10] * rt_rz_ry_ex_hat[1] + _P[8][10] * rt_rz_ry_ex_hat[2] + _P[10][16] * rt_rz_ry_ex_h_inv - _P[10][17] * param_y - _P[10][18] * rt_rz_ry_ex_hat[2];
+//            HP[11] = _P[11][index] * h_inv + _P[6][11] * rt_rz_ry_ex_hat[0] + _P[7][11] * rt_rz_ry_ex_hat[1] + _P[8][11] * rt_rz_ry_ex_hat[2] + _P[11][16] * rt_rz_ry_ex_h_inv - _P[11][17] * param_y - _P[11][18] * rt_rz_ry_ex_hat[2];
+//
+//            if (_control_status.flags.acc_x_bias) {
+//                HP[12] = _P[12][index] * h_inv + _P[6][12] * rt_rz_ry_ex_hat[0] + _P[7][12] * rt_rz_ry_ex_hat[1] + _P[8][12] * rt_rz_ry_ex_hat[2] + _P[12][16] * rt_rz_ry_ex_h_inv - _P[12][17] * param_y - _P[12][18] * rt_rz_ry_ex_hat[2];
+//            } else {
+//                HP[12] = 0.f;
+//            }
+//
+//            if (_control_status.flags.acc_y_bias) {
+//                HP[13] = _P[13][index] * h_inv + _P[6][13] * rt_rz_ry_ex_hat[0] + _P[7][13] * rt_rz_ry_ex_hat[1] + _P[8][13] * rt_rz_ry_ex_hat[2] + _P[13][16] * rt_rz_ry_ex_h_inv - _P[13][17] * param_y - _P[13][18] * rt_rz_ry_ex_hat[2];
+//            } else {
+//                HP[13] = 0.f;
+//            }
+//
+//            if (_control_status.flags.acc_z_bias) {
+//                HP[14] = _P[14][index] * h_inv + _P[6][14] * rt_rz_ry_ex_hat[0] + _P[7][14] * rt_rz_ry_ex_hat[1] + _P[8][14] * rt_rz_ry_ex_hat[2] + _P[14][16] * rt_rz_ry_ex_h_inv - _P[14][17] * param_y - _P[14][18] * rt_rz_ry_ex_hat[2];
+//            } else {
+//                HP[14] = 0.f;
+//            }
+//
+//            if (_control_status.flags.grav) {
+//                HP[15] = _P[15][index] * h_inv + _P[6][15] * rt_rz_ry_ex_hat[0] + _P[7][15] * rt_rz_ry_ex_hat[1] + _P[8][15] * rt_rz_ry_ex_hat[2] + _P[15][16] * rt_rz_ry_ex_h_inv - _P[15][17] * param_y - _P[15][18] * rt_rz_ry_ex_hat[2];
+//            } else {
+//                HP[15] = 0.f;
+//            }
+//
+//            if (_control_status.flags.mag_norm) {
+//                HP[16] = _P[16][index] * h_inv + _P[6][16] * rt_rz_ry_ex_hat[0] + _P[7][16] * rt_rz_ry_ex_hat[1] + _P[8][16] * rt_rz_ry_ex_hat[2] + _P[16][16] * rt_rz_ry_ex_h_inv - _P[16][17] * param_y - _P[16][18] * rt_rz_ry_ex_hat[2];
+//            } else {
+//                HP[16] = 0.f;
+//            }
+//
+//            if (_control_status.flags.mag_ang) {
+//                HP[17] = _P[17][index] * h_inv + _P[6][17] * rt_rz_ry_ex_hat[0] + _P[7][17] * rt_rz_ry_ex_hat[1] + _P[8][17] * rt_rz_ry_ex_hat[2] + _P[16][17] * rt_rz_ry_ex_h_inv - _P[17][17] * param_y - _P[17][18] * rt_rz_ry_ex_hat[2];
+//                HP[18] = _P[18][index] * h_inv + _P[6][18] * rt_rz_ry_ex_hat[0] + _P[7][18] * rt_rz_ry_ex_hat[1] + _P[8][18] * rt_rz_ry_ex_hat[2] + _P[16][18] * rt_rz_ry_ex_h_inv - _P[17][18] * param_y - _P[18][18] * rt_rz_ry_ex_hat[2];
+//            } else {
+//                HP[17] = 0.f;
+//                HP[18] = 0.f;
+//            }
+//
+//            if (_control_status.flags.mag_bias) {
+//                const float cov_20_index = (dim == 2) ? _P[20][index] : _P[index][20];
+//                HP[19] = _P[19][index] * h_inv + _P[6][19] * rt_rz_ry_ex_hat[0] + _P[7][19] * rt_rz_ry_ex_hat[1] + _P[8][19] * rt_rz_ry_ex_hat[2] + _P[16][19] * rt_rz_ry_ex_h_inv - _P[17][19] * param_y - _P[18][19] * rt_rz_ry_ex_hat[2];
+//                HP[20] = cov_20_index * h_inv + _P[6][20] * rt_rz_ry_ex_hat[0] + _P[7][20] * rt_rz_ry_ex_hat[1] + _P[8][20] * rt_rz_ry_ex_hat[2] + _P[16][20] * rt_rz_ry_ex_h_inv - _P[17][20] * param_y - _P[18][20] * rt_rz_ry_ex_hat[2];
+//                HP[21] = _P[index][21] * h_inv + _P[6][21] * rt_rz_ry_ex_hat[0] + _P[7][21] * rt_rz_ry_ex_hat[1] + _P[8][21] * rt_rz_ry_ex_hat[2] + _P[16][21] * rt_rz_ry_ex_h_inv - _P[17][21] * param_y - _P[18][21] * rt_rz_ry_ex_hat[2];
+//            } else {
+//                HP[19] = 0.f;
+//                HP[20] = 0.f;
+//                HP[21] = 0.f;
+//            }
+//
+//            if (_control_status.flags.wind) {
+//                HP[22] = _P[index][22] * h_inv + _P[6][22] * rt_rz_ry_ex_hat[0] + _P[7][22] * rt_rz_ry_ex_hat[1] + _P[8][22] * rt_rz_ry_ex_hat[2] + _P[16][22] * rt_rz_ry_ex_h_inv - _P[17][22] * param_y - _P[18][22] * rt_rz_ry_ex_hat[2];
+//                HP[23] = _P[index][23] * h_inv + _P[6][23] * rt_rz_ry_ex_hat[0] + _P[7][23] * rt_rz_ry_ex_hat[1] + _P[8][23] * rt_rz_ry_ex_hat[2] + _P[16][23] * rt_rz_ry_ex_h_inv - _P[17][23] * param_y - _P[18][23] * rt_rz_ry_ex_hat[2];
+//            } else {
+//                HP[22] = 0.f;
+//                HP[23] = 0.f;
+//            }
+//
+//            // H * _P * H' + R
+//            fuse_data.innov_var(dim) = HP[index] * h_inv + HP[6] * rt_rz_ry_ex_hat[0] + HP[7] * rt_rz_ry_ex_hat[1] + HP[8] * rt_rz_ry_ex_hat[2] + HP[16] * rt_rz_ry_ex_h_inv - HP[17] * param_y - HP[18] * rt_rz_ry_ex_hat[2] + sq(noise_std);
+//
+//            // h = m
+//            // e = (y - bm) - R' * m
+//            fuse_data.innov(dim) = mag_corr(dim) * h_inv - rt_rz_ry_ex;
+//
+//            fuse_data.test_ratio(dim) = sq(fuse_data.innov(dim) / gate) / fuse_data.innov_var(dim);
+//            if (fuse_data.test_ratio(dim) > 1.f) {
+//                flag |= 1 << (2 * dim);
+//            } else {
+//                if (!posterior_estimate(HP, fuse_data.innov_var(dim), fuse_data.innov(dim))) {
+//                    flag |= 2 << (2 * dim);
+//                }
+//            }
+//        }
+//
+//        regular_covariance_to_symmetric<DIM>(0);
+//
+//        return flag;
+//    }
+
+    uint8_t GESKF::fuse_mag_body(const Vector3f &mag_body, const float &gate, const float &noise_std, FuseData<3> &fuse_data, bool attitude_inhibit) {
         uint8_t flag = 0;
         float HP[DIM];
 
-        // Hb = y - bm
-        const Vector3f mag_corr = mag_body - _state.mag_bias;
+        // hb = (y - bm) / |y - bm|
+        const Vector3f h_obs = _Rnb * (mag_body - _state.mag_bias).normalized();
 
         const float cos_y = cosf(_state.mag_ang(0)), sin_y = sinf(_state.mag_ang(0));
         const float cos_z = cosf(_state.mag_ang(1)), sin_z = sinf(_state.mag_ang(1));
 
-        // Rz * Ry * ex
-        const float rz_ry_ex[3] = {cos_z * cos_y, sin_z * cos_y, -sin_y};
+        // h = Rz * Ry * ex
+        const float h[3] = {cos_z * cos_y, sin_z * cos_y, -sin_y};
 
-        // 1 / H
-        const float h_inv = (_state.mag_norm < 1e-6f) ? 1.f / _params.mag_norm : 1.f / _state.mag_norm;
+        // 1 / |H|
+        const float mag_norm_inv = (_state.mag_norm < 1e-1f) ? 1.f / _params.mag_norm : 1.f / _state.mag_norm;
 
-        for (uint8_t dim = 0; dim < 3; ++dim) {
-            /*
-            K = P * H * (H * P * H' + R)^-1
-            x = x + K * (y - h)
-            P = (I - K * H) * P
-            where, H = [O, O, R'*m^, O, O, O, R', I, O]
-                h = R' * m
-            */
+        float H_x = 0.f, H_y = 0.f, H_z = 0.f;
+        float H_norm = 0.f, H_inc = 0.f, H_dec = 0.f;
+        float H_mb[3] = {0.f, 0.f, 0.f};
 
-            // R' * RZ * RY * ex
-            const float rt_rz_ry_ex = _Rnb(0, dim) * rz_ry_ex[0] + _Rnb(1, dim) * rz_ry_ex[1] + _Rnb(2, dim) * rz_ry_ex[2];
+        // x轴
+        if (!attitude_inhibit) {
+            H_x = 0.f;
+            H_y = -h[2];
+            H_z = h[1];
+        }
+        if (_control_status.flags.mag_norm) {
+            H_norm = h[0] * mag_norm_inv;
+        }
+        if (_control_status.flags.mag_ang) {
+            H_inc = h[2] * cos_z;
+            H_dec = -h[1];
+        }
+        if (_control_status.flags.mag_bias) {
+            H_mb[0] = _Rnb(0, 0) * mag_norm_inv;
+            H_mb[1] = _Rnb(0, 1) * mag_norm_inv;
+            H_mb[2] = _Rnb(0, 2) * mag_norm_inv;
+        }
 
-            // R' * RZ * RY * ex / H
-            const float rt_rz_ry_ex_h_inv = rt_rz_ry_ex * h_inv;
+        // H * P  or  P * H'
+        HP[0] = _P[0][19] * H_mb[0] + _P[0][20] * H_mb[1] + _P[0][21] * H_mb[2] + H_y * _P[0][7] + H_z * _P[0][8] + _P[0][16] * H_norm + _P[0][17] * H_inc + _P[0][18] * H_dec;
+        HP[1] = _P[1][19] * H_mb[0] + _P[1][20] * H_mb[1] + _P[1][21] * H_mb[2] + H_y * _P[1][7] + H_z * _P[1][8] + _P[1][16] * H_norm + _P[1][17] * H_inc + _P[1][18] * H_dec;
+        HP[2] = _P[2][19] * H_mb[0] + _P[2][20] * H_mb[1] + _P[2][21] * H_mb[2] + H_y * _P[2][7] + H_z * _P[2][8] + _P[2][16] * H_norm + _P[2][17] * H_inc + _P[2][18] * H_dec;
+        HP[3] = _P[3][19] * H_mb[0] + _P[3][20] * H_mb[1] + _P[3][21] * H_mb[2] + H_y * _P[3][7] + H_z * _P[3][8] + _P[3][16] * H_norm + _P[3][17] * H_inc + _P[3][18] * H_dec;
+        HP[4] = _P[4][19] * H_mb[0] + _P[4][20] * H_mb[1] + _P[4][21] * H_mb[2] + H_y * _P[4][7] + H_z * _P[4][8] + _P[4][16] * H_norm + _P[4][17] * H_inc + _P[4][18] * H_dec;
+        HP[5] = _P[5][19] * H_mb[0] + _P[5][20] * H_mb[1] + _P[5][21] * H_mb[2] + H_y * _P[5][7] + H_z * _P[5][8] + _P[5][16] * H_norm + _P[5][17] * H_inc + _P[5][18] * H_dec;
+        HP[6] = _P[6][19] * H_mb[0] + _P[6][20] * H_mb[1] + _P[6][21] * H_mb[2] + H_y * _P[6][7] + H_z * _P[6][8] + _P[6][16] * H_norm + _P[6][17] * H_inc + _P[6][18] * H_dec;
+        HP[7] = _P[7][19] * H_mb[0] + _P[7][20] * H_mb[1] + _P[7][21] * H_mb[2] + H_y * _P[7][7] + H_z * _P[7][8] + _P[7][16] * H_norm + _P[7][17] * H_inc + _P[7][18] * H_dec;
+        HP[8] = _P[8][19] * H_mb[0] + _P[8][20] * H_mb[1] + _P[8][21] * H_mb[2] + H_y * _P[7][8] + H_z * _P[8][8] + _P[8][16] * H_norm + _P[8][17] * H_inc + _P[8][18] * H_dec;
+        HP[9] = _P[9][19] * H_mb[0] + _P[9][20] * H_mb[1] + _P[9][21] * H_mb[2] + H_y * _P[7][9] + H_z * _P[8][9] + _P[9][16] * H_norm + _P[9][17] * H_inc + _P[9][18] * H_dec;
+        HP[10] = _P[10][19] * H_mb[0] + _P[10][20] * H_mb[1] + _P[10][21] * H_mb[2] + H_y * _P[7][10] + H_z * _P[8][10] + _P[10][16] * H_norm + _P[10][17] * H_inc + _P[10][18] * H_dec;
+        HP[11] = _P[11][19] * H_mb[0] + _P[11][20] * H_mb[1] + _P[11][21] * H_mb[2] + H_y * _P[7][11] + H_z * _P[8][11] + _P[11][16] * H_norm + _P[11][17] * H_inc + _P[11][18] * H_dec;
 
-            // R' * (RZ * RY * ex)^
-            const float rt_rz_ry_ex_hat[3] = {
-                    _Rnb(1, dim) * rz_ry_ex[2] - _Rnb(2, dim) * rz_ry_ex[1],
-                    _Rnb(2, dim) * rz_ry_ex[0] - _Rnb(0, dim) * rz_ry_ex[2],
-                    _Rnb(0, dim) * rz_ry_ex[1] - _Rnb(1, dim) * rz_ry_ex[0]
-            };
+        if (_control_status.flags.acc_x_bias) {
+            HP[12] = _P[12][19] * H_mb[0] + _P[12][20] * H_mb[1] + _P[12][21] * H_mb[2] + H_y * _P[7][12] + H_z * _P[8][12] + _P[12][16] * H_norm + _P[12][17] * H_inc + _P[12][18] * H_dec;
+        } else {
+            HP[12] = 0.f;
+        }
 
-            const float param_y = rt_rz_ry_ex_hat[1]*cos_z - sin_z*rt_rz_ry_ex_hat[0];
+        if (_control_status.flags.acc_y_bias) {
+            HP[13] = _P[13][19] * H_mb[0] + _P[13][20] * H_mb[1] + _P[13][21] * H_mb[2] + H_y * _P[7][13] + H_z * _P[8][13] + _P[13][16] * H_norm + _P[13][17] * H_inc + _P[13][18] * H_dec;
+        } else {
+            HP[13] = 0.f;
+        }
 
-            // H * P  or  P * H'
-            const uint8_t index = 19 + dim;
+        if (_control_status.flags.acc_z_bias) {
+            HP[14] = _P[14][19] * H_mb[0] + _P[14][20] * H_mb[1] + _P[14][21] * H_mb[2] + H_y * _P[7][14] + H_z * _P[8][14] + _P[14][16] * H_norm + _P[14][17] * H_inc + _P[14][18] * H_dec;
+        } else {
+            HP[14] = 0.f;
+        }
 
-            HP[0] = _P[0][index] * h_inv + _P[0][6] * rt_rz_ry_ex_hat[0] + _P[0][7] * rt_rz_ry_ex_hat[1] + _P[0][8] * rt_rz_ry_ex_hat[2] + _P[0][16] * rt_rz_ry_ex_h_inv - _P[0][17] * param_y - _P[0][18] * rt_rz_ry_ex_hat[2];
-            HP[1] = _P[1][index] * h_inv + _P[1][6] * rt_rz_ry_ex_hat[0] + _P[1][7] * rt_rz_ry_ex_hat[1] + _P[1][8] * rt_rz_ry_ex_hat[2] + _P[1][16] * rt_rz_ry_ex_h_inv - _P[1][17] * param_y - _P[1][18] * rt_rz_ry_ex_hat[2];
-            HP[2] = _P[2][index] * h_inv + _P[2][6] * rt_rz_ry_ex_hat[0] + _P[2][7] * rt_rz_ry_ex_hat[1] + _P[2][8] * rt_rz_ry_ex_hat[2] + _P[2][16] * rt_rz_ry_ex_h_inv - _P[2][17] * param_y - _P[2][18] * rt_rz_ry_ex_hat[2];
-            HP[3] = _P[3][index] * h_inv + _P[3][6] * rt_rz_ry_ex_hat[0] + _P[3][7] * rt_rz_ry_ex_hat[1] + _P[3][8] * rt_rz_ry_ex_hat[2] + _P[3][16] * rt_rz_ry_ex_h_inv - _P[3][17] * param_y - _P[3][18] * rt_rz_ry_ex_hat[2];
-            HP[4] = _P[4][index] * h_inv + _P[4][6] * rt_rz_ry_ex_hat[0] + _P[4][7] * rt_rz_ry_ex_hat[1] + _P[4][8] * rt_rz_ry_ex_hat[2] + _P[4][16] * rt_rz_ry_ex_h_inv - _P[4][17] * param_y - _P[4][18] * rt_rz_ry_ex_hat[2];
-            HP[5] = _P[5][index] * h_inv + _P[5][6] * rt_rz_ry_ex_hat[0] + _P[5][7] * rt_rz_ry_ex_hat[1] + _P[5][8] * rt_rz_ry_ex_hat[2] + _P[5][16] * rt_rz_ry_ex_h_inv - _P[5][17] * param_y - _P[5][18] * rt_rz_ry_ex_hat[2];
-            HP[6] = _P[6][index] * h_inv + _P[6][6] * rt_rz_ry_ex_hat[0] + _P[6][7] * rt_rz_ry_ex_hat[1] + _P[6][8] * rt_rz_ry_ex_hat[2] + _P[6][16] * rt_rz_ry_ex_h_inv - _P[6][17] * param_y - _P[6][18] * rt_rz_ry_ex_hat[2];
-            HP[7] = _P[7][index] * h_inv + _P[6][7] * rt_rz_ry_ex_hat[0] + _P[7][7] * rt_rz_ry_ex_hat[1] + _P[7][8] * rt_rz_ry_ex_hat[2] + _P[7][16] * rt_rz_ry_ex_h_inv - _P[7][17] * param_y - _P[7][18] * rt_rz_ry_ex_hat[2];
-            HP[8] = _P[8][index] * h_inv + _P[6][8] * rt_rz_ry_ex_hat[0] + _P[7][8] * rt_rz_ry_ex_hat[1] + _P[8][8] * rt_rz_ry_ex_hat[2] + _P[8][16] * rt_rz_ry_ex_h_inv - _P[8][17] * param_y - _P[8][18] * rt_rz_ry_ex_hat[2];
-            HP[9] = _P[9][index] * h_inv + _P[6][9] * rt_rz_ry_ex_hat[0] + _P[7][9] * rt_rz_ry_ex_hat[1] + _P[8][9] * rt_rz_ry_ex_hat[2] + _P[9][16] * rt_rz_ry_ex_h_inv - _P[9][17] * param_y - _P[9][18] * rt_rz_ry_ex_hat[2];
-            HP[10] = _P[10][index] * h_inv + _P[6][10] * rt_rz_ry_ex_hat[0] + _P[7][10] * rt_rz_ry_ex_hat[1] + _P[8][10] * rt_rz_ry_ex_hat[2] + _P[10][16] * rt_rz_ry_ex_h_inv - _P[10][17] * param_y - _P[10][18] * rt_rz_ry_ex_hat[2];
-            HP[11] = _P[11][index] * h_inv + _P[6][11] * rt_rz_ry_ex_hat[0] + _P[7][11] * rt_rz_ry_ex_hat[1] + _P[8][11] * rt_rz_ry_ex_hat[2] + _P[11][16] * rt_rz_ry_ex_h_inv - _P[11][17] * param_y - _P[11][18] * rt_rz_ry_ex_hat[2];
+        if (_control_status.flags.grav) {
+            HP[15] = _P[15][19] * H_mb[0] + _P[15][20] * H_mb[1] + _P[15][21] * H_mb[2] + H_y * _P[7][15] + H_z * _P[8][15] + _P[15][16] * H_norm + _P[15][17] * H_inc + _P[15][18] * H_dec;
+        } else {
+            HP[15] = 0.f;
+        }
 
-            if (_control_status.flags.acc_x_bias) {
-                HP[12] = _P[12][index] * h_inv + _P[6][12] * rt_rz_ry_ex_hat[0] + _P[7][12] * rt_rz_ry_ex_hat[1] + _P[8][12] * rt_rz_ry_ex_hat[2] + _P[12][16] * rt_rz_ry_ex_h_inv - _P[12][17] * param_y - _P[12][18] * rt_rz_ry_ex_hat[2];
-            } else {
-                HP[12] = 0.f;
+        if (_control_status.flags.mag_norm) {
+            HP[16] = _P[16][19] * H_mb[0] + _P[16][20] * H_mb[1] + _P[16][21] * H_mb[2] + H_y * _P[7][16] + H_z * _P[8][16] + _P[16][16] * H_norm + _P[16][17] * H_inc + _P[16][18] * H_dec;
+        } else {
+            HP[16] = 0.f;
+        }
+
+        if (_control_status.flags.mag_ang) {
+            HP[17] = _P[17][19] * H_mb[0] + _P[17][20] * H_mb[1] + _P[17][21] * H_mb[2] + H_y * _P[7][17] + H_z * _P[8][17] + _P[16][17] * H_norm + _P[17][17] * H_inc + _P[17][18] * H_dec;
+            HP[18] = _P[18][19] * H_mb[0] + _P[18][20] * H_mb[1] + _P[18][21] * H_mb[2] + H_y * _P[7][18] + H_z * _P[8][18] + _P[16][18] * H_norm + _P[17][18] * H_inc + _P[18][18] * H_dec;
+        } else {
+            HP[17] = 0.f;
+            HP[18] = 0.f;
+        }
+
+        if (_control_status.flags.mag_bias) {
+            HP[19] = _P[19][19] * H_mb[0] + _P[19][20] * H_mb[1] + _P[19][21] * H_mb[2] + H_y * _P[7][19] + H_z * _P[8][19] + _P[16][19] * H_norm + _P[17][19] * H_inc + _P[18][19] * H_dec;
+            HP[20] = _P[19][20] * H_mb[0] + _P[20][20] * H_mb[1] + _P[20][21] * H_mb[2] + H_y * _P[7][20] + H_z * _P[8][20] + _P[16][20] * H_norm + _P[17][20] * H_inc + _P[18][20] * H_dec;
+            HP[21] = _P[19][21] * H_mb[0] + _P[20][21] * H_mb[1] + _P[21][21] * H_mb[2] + H_y * _P[7][21] + H_z * _P[8][21] + _P[16][21] * H_norm + _P[17][21] * H_inc + _P[18][21] * H_dec;
+        } else {
+            HP[19] = 0.f;
+            HP[20] = 0.f;
+            HP[21] = 0.f;
+        }
+
+        if (_control_status.flags.wind) {
+            HP[22] = _P[19][22] * H_mb[0] + _P[20][22] * H_mb[1] + _P[21][22] * H_mb[2] + H_y * _P[7][22] + H_z * _P[8][22] + _P[16][22] * H_norm + _P[17][22] * H_inc + _P[18][22] * H_dec;
+            HP[23] = _P[19][23] * H_mb[0] + _P[20][23] * H_mb[1] + _P[21][23] * H_mb[2] + H_y * _P[7][23] + H_z * _P[8][23] + _P[16][23] * H_norm + _P[17][23] * H_inc + _P[18][23] * H_dec;
+        } else {
+            HP[22] = 0.f;
+            HP[23] = 0.f;
+        }
+
+        // H * _P * H' + R
+        fuse_data.innov_var(0) = HP[19] * H_mb[0] + HP[20] * H_mb[1] + HP[21] * H_mb[2] + H_y * HP[7] + H_z * HP[8] + HP[16] * H_norm + HP[17] * H_inc + HP[18] * H_dec + sq(noise_std);
+
+        // h = m
+        // e = (y - bm) - R' * m
+        fuse_data.innov(0) = h_obs(0) - h[0];
+
+        fuse_data.test_ratio(0) = sq(fuse_data.innov(0) / gate) / fuse_data.innov_var(0);
+        if (fuse_data.test_ratio(0) > 1.f) {
+            flag |= 1;
+        } else {
+            if (!posterior_estimate(HP, fuse_data.innov_var(0), fuse_data.innov(0))) {
+                flag |= 2;
             }
+        }
 
-            if (_control_status.flags.acc_y_bias) {
-                HP[13] = _P[13][index] * h_inv + _P[6][13] * rt_rz_ry_ex_hat[0] + _P[7][13] * rt_rz_ry_ex_hat[1] + _P[8][13] * rt_rz_ry_ex_hat[2] + _P[13][16] * rt_rz_ry_ex_h_inv - _P[13][17] * param_y - _P[13][18] * rt_rz_ry_ex_hat[2];
-            } else {
-                HP[13] = 0.f;
+        // y轴
+        if (!attitude_inhibit) {
+            H_x = h[2];
+            H_y = 0.f;
+            H_z = -h[0];
+        }
+        if (_control_status.flags.mag_norm) {
+            H_norm = h[1] * mag_norm_inv;
+        }
+        if (_control_status.flags.mag_ang) {
+            H_inc = h[2] * sin_z;
+            H_dec = h[0];
+        }
+        if (_control_status.flags.mag_bias) {
+            H_mb[0] = _Rnb(1, 0) * mag_norm_inv;
+            H_mb[1] = _Rnb(1, 1) * mag_norm_inv;
+            H_mb[2] = _Rnb(1, 2) * mag_norm_inv;
+        }
+
+        // H * P  or  P * H'
+        HP[0] = _P[0][19] * H_mb[0] + _P[0][20] * H_mb[1] + _P[0][21] * H_mb[2] + H_x * _P[0][6] + H_z * _P[0][8] + _P[0][16] * H_norm + _P[0][17] * H_inc + _P[0][18] * H_dec;
+        HP[1] = _P[1][19] * H_mb[0] + _P[1][20] * H_mb[1] + _P[1][21] * H_mb[2] + H_x * _P[1][6] + H_z * _P[1][8] + _P[1][16] * H_norm + _P[1][17] * H_inc + _P[1][18] * H_dec;
+        HP[2] = _P[2][19] * H_mb[0] + _P[2][20] * H_mb[1] + _P[2][21] * H_mb[2] + H_x * _P[2][6] + H_z * _P[2][8] + _P[2][16] * H_norm + _P[2][17] * H_inc + _P[2][18] * H_dec;
+        HP[3] = _P[3][19] * H_mb[0] + _P[3][20] * H_mb[1] + _P[3][21] * H_mb[2] + H_x * _P[3][6] + H_z * _P[3][8] + _P[3][16] * H_norm + _P[3][17] * H_inc + _P[3][18] * H_dec;
+        HP[4] = _P[4][19] * H_mb[0] + _P[4][20] * H_mb[1] + _P[4][21] * H_mb[2] + H_x * _P[4][6] + H_z * _P[4][8] + _P[4][16] * H_norm + _P[4][17] * H_inc + _P[4][18] * H_dec;
+        HP[5] = _P[5][19] * H_mb[0] + _P[5][20] * H_mb[1] + _P[5][21] * H_mb[2] + H_x * _P[5][6] + H_z * _P[5][8] + _P[5][16] * H_norm + _P[5][17] * H_inc + _P[5][18] * H_dec;
+        HP[6] = _P[6][19] * H_mb[0] + _P[6][20] * H_mb[1] + _P[6][21] * H_mb[2] + H_x * _P[6][6] + H_z * _P[6][8] + _P[6][16] * H_norm + _P[6][17] * H_inc + _P[6][18] * H_dec;
+        HP[7] = _P[7][19] * H_mb[0] + _P[7][20] * H_mb[1] + _P[7][21] * H_mb[2] + H_x * _P[6][7] + H_z * _P[7][8] + _P[7][16] * H_norm + _P[7][17] * H_inc + _P[7][18] * H_dec;
+        HP[8] = _P[8][19] * H_mb[0] + _P[8][20] * H_mb[1] + _P[8][21] * H_mb[2] + H_x * _P[6][8] + H_z * _P[8][8] + _P[8][16] * H_norm + _P[8][17] * H_inc + _P[8][18] * H_dec;
+        HP[9] = _P[9][19] * H_mb[0] + _P[9][20] * H_mb[1] + _P[9][21] * H_mb[2] + H_x * _P[6][9] + H_z * _P[8][9] + _P[9][16] * H_norm + _P[9][17] * H_inc + _P[9][18] * H_dec;
+        HP[10] = _P[10][19] * H_mb[0] + _P[10][20] * H_mb[1] + _P[10][21] * H_mb[2] + H_x * _P[6][10] + H_z * _P[8][10] + _P[10][16] * H_norm + _P[10][17] * H_inc + _P[10][18] * H_dec;
+        HP[11] = _P[11][19] * H_mb[0] + _P[11][20] * H_mb[1] + _P[11][21] * H_mb[2] + H_x * _P[6][11] + H_z * _P[8][11] + _P[11][16] * H_norm + _P[11][17] * H_inc + _P[11][18] * H_dec;
+
+        if (_control_status.flags.acc_x_bias) {
+            HP[12] = _P[12][19] * H_mb[0] + _P[12][20] * H_mb[1] + _P[12][21] * H_mb[2] + H_x * _P[6][12] + H_z * _P[8][12] + _P[12][16] * H_norm + _P[12][17] * H_inc + _P[12][18] * H_dec;
+        } else {
+            HP[12] = 0.f;
+        }
+
+        if (_control_status.flags.acc_y_bias) {
+            HP[13] = _P[13][19] * H_mb[0] + _P[13][20] * H_mb[1] + _P[13][21] * H_mb[2] + H_x * _P[6][13] + H_z * _P[8][13] + _P[13][16] * H_norm + _P[13][17] * H_inc + _P[13][18] * H_dec;
+        } else {
+            HP[13] = 0.f;
+        }
+
+        if (_control_status.flags.acc_z_bias) {
+            HP[14] = _P[14][19] * H_mb[0] + _P[14][20] * H_mb[1] + _P[14][21] * H_mb[2] + H_x * _P[6][14] + H_z * _P[8][14] + _P[14][16] * H_norm + _P[14][17] * H_inc + _P[14][18] * H_dec;
+        } else {
+            HP[14] = 0.f;
+        }
+
+        if (_control_status.flags.grav) {
+            HP[15] = _P[15][19] * H_mb[0] + _P[15][20] * H_mb[1] + _P[15][21] * H_mb[2] + H_x * _P[6][15] + H_z * _P[8][15] + _P[15][16] * H_norm + _P[15][17] * H_inc + _P[15][18] * H_dec;
+        } else {
+            HP[15] = 0.f;
+        }
+
+        if (_control_status.flags.mag_norm) {
+            HP[16] = _P[16][19] * H_mb[0] + _P[16][20] * H_mb[1] + _P[16][21] * H_mb[2] + H_x * _P[6][16] + H_z * _P[8][16] + _P[16][16] * H_norm + _P[16][17] * H_inc + _P[16][18] * H_dec;
+        } else {
+            HP[16] = 0.f;
+        }
+
+        if (_control_status.flags.mag_ang) {
+            HP[17] = _P[17][19] * H_mb[0] + _P[17][20] * H_mb[1] + _P[17][21] * H_mb[2] + H_x * _P[6][17] + H_z * _P[8][17] + _P[16][17] * H_norm + _P[17][17] * H_inc + _P[17][18] * H_dec;
+            HP[18] = _P[18][19] * H_mb[0] + _P[18][20] * H_mb[1] + _P[18][21] * H_mb[2] + H_x * _P[6][18] + H_z * _P[8][18] + _P[16][18] * H_norm + _P[17][18] * H_inc + _P[18][18] * H_dec;
+        } else {
+            HP[17] = 0.f;
+            HP[18] = 0.f;
+        }
+
+        if (_control_status.flags.mag_bias) {
+            HP[19] = _P[19][19] * H_mb[0] + _P[19][20] * H_mb[1] + _P[19][21] * H_mb[2] + H_x * _P[6][19] + H_z * _P[8][19] + _P[16][19] * H_norm + _P[17][19] * H_inc + _P[18][19] * H_dec;
+            HP[20] = _P[19][20] * H_mb[0] + _P[20][20] * H_mb[1] + _P[20][21] * H_mb[2] + H_x * _P[6][20] + H_z * _P[8][20] + _P[16][20] * H_norm + _P[17][20] * H_inc + _P[18][20] * H_dec;
+            HP[21] = _P[19][21] * H_mb[0] + _P[20][21] * H_mb[1] + _P[21][21] * H_mb[2] + H_x * _P[6][21] + H_z * _P[8][21] + _P[16][21] * H_norm + _P[17][21] * H_inc + _P[18][21] * H_dec;
+        } else {
+            HP[19] = 0.f;
+            HP[20] = 0.f;
+            HP[21] = 0.f;
+        }
+
+        if (_control_status.flags.wind) {
+            HP[22] = _P[19][22] * H_mb[0] + _P[20][22] * H_mb[1] + _P[21][22] * H_mb[2] + H_x * _P[6][22] + H_z * _P[8][22] + _P[16][22] * H_norm + _P[17][22] * H_inc + _P[18][22] * H_dec;
+            HP[23] = _P[19][23] * H_mb[0] + _P[20][23] * H_mb[1] + _P[21][23] * H_mb[2] + H_x * _P[6][23] + H_z * _P[8][23] + _P[16][23] * H_norm + _P[17][23] * H_inc + _P[18][23] * H_dec;
+        } else {
+            HP[22] = 0.f;
+            HP[23] = 0.f;
+        }
+
+        // H * _P * H' + R
+        fuse_data.innov_var(1) = HP[19] * H_mb[0] + HP[20] * H_mb[1] + HP[21] * H_mb[2] + H_x * HP[6] + H_z * HP[8] + HP[16] * H_norm + HP[17] * H_inc + HP[18] * H_dec + sq(noise_std);
+
+        // h = m
+        // e = (y - bm) - R' * m
+        fuse_data.innov(1) = h_obs(1) - h[1];
+
+        fuse_data.test_ratio(1) = sq(fuse_data.innov(1) / gate) / fuse_data.innov_var(1);
+        if (fuse_data.test_ratio(1) > 1.f) {
+            flag |= 1 << 2;
+        } else {
+            if (!posterior_estimate(HP, fuse_data.innov_var(1), fuse_data.innov(1))) {
+                flag |= 2 << 2;
             }
+        }
 
-            if (_control_status.flags.acc_z_bias) {
-                HP[14] = _P[14][index] * h_inv + _P[6][14] * rt_rz_ry_ex_hat[0] + _P[7][14] * rt_rz_ry_ex_hat[1] + _P[8][14] * rt_rz_ry_ex_hat[2] + _P[14][16] * rt_rz_ry_ex_h_inv - _P[14][17] * param_y - _P[14][18] * rt_rz_ry_ex_hat[2];
-            } else {
-                HP[14] = 0.f;
-            }
+        // z轴
+        if (!attitude_inhibit) {
+            H_x = -h[1];
+            H_y = h[0];
+            H_z = 0.f;
+        }
+        if (_control_status.flags.mag_norm) {
+            H_norm = h[2] * mag_norm_inv;
+        }
+        if (_control_status.flags.mag_ang) {
+            H_inc = -cos_z;
+            H_dec = 0.f;
+        }
+        if (_control_status.flags.mag_bias) {
+            H_mb[0] = _Rnb(2, 0) * mag_norm_inv;
+            H_mb[1] = _Rnb(2, 1) * mag_norm_inv;
+            H_mb[2] = _Rnb(2, 2) * mag_norm_inv;
+        }
 
-            if (_control_status.flags.grav) {
-                HP[15] = _P[15][index] * h_inv + _P[6][15] * rt_rz_ry_ex_hat[0] + _P[7][15] * rt_rz_ry_ex_hat[1] + _P[8][15] * rt_rz_ry_ex_hat[2] + _P[15][16] * rt_rz_ry_ex_h_inv - _P[15][17] * param_y - _P[15][18] * rt_rz_ry_ex_hat[2];
-            } else {
-                HP[15] = 0.f;
-            }
+        // H * P  or  P * H'
+        HP[0] = _P[0][19] * H_mb[0] + _P[0][20] * H_mb[1] + _P[0][21] * H_mb[2] + H_x * _P[0][6] + H_y * _P[0][7] + _P[0][16] * H_norm + _P[0][17] * H_inc;
+        HP[1] = _P[1][19] * H_mb[0] + _P[1][20] * H_mb[1] + _P[1][21] * H_mb[2] + H_x * _P[1][6] + H_y * _P[1][7] + _P[1][16] * H_norm + _P[1][17] * H_inc;
+        HP[2] = _P[2][19] * H_mb[0] + _P[2][20] * H_mb[1] + _P[2][21] * H_mb[2] + H_x * _P[2][6] + H_y * _P[2][7] + _P[2][16] * H_norm + _P[2][17] * H_inc;
+        HP[3] = _P[3][19] * H_mb[0] + _P[3][20] * H_mb[1] + _P[3][21] * H_mb[2] + H_x * _P[3][6] + H_y * _P[3][7] + _P[3][16] * H_norm + _P[3][17] * H_inc;
+        HP[4] = _P[4][19] * H_mb[0] + _P[4][20] * H_mb[1] + _P[4][21] * H_mb[2] + H_x * _P[4][6] + H_y * _P[4][7] + _P[4][16] * H_norm + _P[4][17] * H_inc;
+        HP[5] = _P[5][19] * H_mb[0] + _P[5][20] * H_mb[1] + _P[5][21] * H_mb[2] + H_x * _P[5][6] + H_y * _P[5][7] + _P[5][16] * H_norm + _P[5][17] * H_inc;
+        HP[6] = _P[6][19] * H_mb[0] + _P[6][20] * H_mb[1] + _P[6][21] * H_mb[2] + H_x * _P[6][6] + H_y * _P[6][7] + _P[6][16] * H_norm + _P[6][17] * H_inc;
+        HP[7] = _P[7][19] * H_mb[0] + _P[7][20] * H_mb[1] + _P[7][21] * H_mb[2] + H_x * _P[6][7] + H_y * _P[7][7] + _P[7][16] * H_norm + _P[7][17] * H_inc;
+        HP[8] = _P[8][19] * H_mb[0] + _P[8][20] * H_mb[1] + _P[8][21] * H_mb[2] + H_x * _P[6][8] + H_y * _P[7][8] + _P[8][16] * H_norm + _P[8][17] * H_inc;
+        HP[9] = _P[9][19] * H_mb[0] + _P[9][20] * H_mb[1] + _P[9][21] * H_mb[2] + H_x * _P[6][9] + H_y * _P[7][9] + _P[9][16] * H_norm + _P[9][17] * H_inc;
+        HP[10] = _P[10][19] * H_mb[0] + _P[10][20] * H_mb[1] + _P[10][21] * H_mb[2] + H_x * _P[6][10] + H_y * _P[7][10] + _P[10][16] * H_norm + _P[10][17] * H_inc;
+        HP[11] = _P[11][19] * H_mb[0] + _P[11][20] * H_mb[1] + _P[11][21] * H_mb[2] + H_x * _P[6][11] + H_y * _P[7][11] + _P[11][16] * H_norm + _P[11][17] * H_inc;
 
-            if (_control_status.flags.mag_norm) {
-                HP[16] = _P[16][index] * h_inv + _P[6][16] * rt_rz_ry_ex_hat[0] + _P[7][16] * rt_rz_ry_ex_hat[1] + _P[8][16] * rt_rz_ry_ex_hat[2] + _P[16][16] * rt_rz_ry_ex_h_inv - _P[16][17] * param_y - _P[16][18] * rt_rz_ry_ex_hat[2];
-            } else {
-                HP[16] = 0.f;
-            }
+        if (_control_status.flags.acc_x_bias) {
+            HP[12] = _P[12][19] * H_mb[0] + _P[12][20] * H_mb[1] + _P[12][21] * H_mb[2] + H_x * _P[6][12] + H_y * _P[7][12] + _P[12][16] * H_norm + _P[12][17] * H_inc;
+        } else {
+            HP[12] = 0.f;
+        }
 
-            if (_control_status.flags.mag_ang) {
-                HP[17] = _P[17][index] * h_inv + _P[6][17] * rt_rz_ry_ex_hat[0] + _P[7][17] * rt_rz_ry_ex_hat[1] + _P[8][17] * rt_rz_ry_ex_hat[2] + _P[16][17] * rt_rz_ry_ex_h_inv - _P[17][17] * param_y - _P[17][18] * rt_rz_ry_ex_hat[2];
-                HP[18] = _P[18][index] * h_inv + _P[6][18] * rt_rz_ry_ex_hat[0] + _P[7][18] * rt_rz_ry_ex_hat[1] + _P[8][18] * rt_rz_ry_ex_hat[2] + _P[16][18] * rt_rz_ry_ex_h_inv - _P[17][18] * param_y - _P[18][18] * rt_rz_ry_ex_hat[2];
-            } else {
-                HP[17] = 0.f;
-                HP[18] = 0.f;
-            }
+        if (_control_status.flags.acc_y_bias) {
+            HP[13] = _P[13][19] * H_mb[0] + _P[13][20] * H_mb[1] + _P[13][21] * H_mb[2] + H_x * _P[6][13] + H_y * _P[7][13] + _P[13][16] * H_norm + _P[13][17] * H_inc;
+        } else {
+            HP[13] = 0.f;
+        }
 
-            if (_control_status.flags.mag_bias) {
-                const float cov_20_index = (dim == 2) ? _P[20][index] : _P[index][20];
-                HP[19] = _P[19][index] * h_inv + _P[6][19] * rt_rz_ry_ex_hat[0] + _P[7][19] * rt_rz_ry_ex_hat[1] + _P[8][19] * rt_rz_ry_ex_hat[2] + _P[16][19] * rt_rz_ry_ex_h_inv - _P[17][19] * param_y - _P[18][19] * rt_rz_ry_ex_hat[2];
-                HP[20] = cov_20_index * h_inv + _P[6][20] * rt_rz_ry_ex_hat[0] + _P[7][20] * rt_rz_ry_ex_hat[1] + _P[8][20] * rt_rz_ry_ex_hat[2] + _P[16][20] * rt_rz_ry_ex_h_inv - _P[17][20] * param_y - _P[18][20] * rt_rz_ry_ex_hat[2];
-                HP[21] = _P[index][21] * h_inv + _P[6][21] * rt_rz_ry_ex_hat[0] + _P[7][21] * rt_rz_ry_ex_hat[1] + _P[8][21] * rt_rz_ry_ex_hat[2] + _P[16][21] * rt_rz_ry_ex_h_inv - _P[17][21] * param_y - _P[18][21] * rt_rz_ry_ex_hat[2];
-            } else {
-                HP[19] = 0.f;
-                HP[20] = 0.f;
-                HP[21] = 0.f;
-            }
+        if (_control_status.flags.acc_z_bias) {
+            HP[14] = _P[14][19] * H_mb[0] + _P[14][20] * H_mb[1] + _P[14][21] * H_mb[2] + H_x * _P[6][14] + H_y * _P[7][14] + _P[14][16] * H_norm + _P[14][17] * H_inc;
+        } else {
+            HP[14] = 0.f;
+        }
 
-            if (_control_status.flags.wind) {
-                HP[22] = _P[index][22] * h_inv + _P[6][22] * rt_rz_ry_ex_hat[0] + _P[7][22] * rt_rz_ry_ex_hat[1] + _P[8][22] * rt_rz_ry_ex_hat[2] + _P[16][22] * rt_rz_ry_ex_h_inv - _P[17][22] * param_y - _P[18][22] * rt_rz_ry_ex_hat[2];
-                HP[23] = _P[index][23] * h_inv + _P[6][23] * rt_rz_ry_ex_hat[0] + _P[7][23] * rt_rz_ry_ex_hat[1] + _P[8][23] * rt_rz_ry_ex_hat[2] + _P[16][23] * rt_rz_ry_ex_h_inv - _P[17][23] * param_y - _P[18][23] * rt_rz_ry_ex_hat[2];
-            } else {
-                HP[22] = 0.f;
-                HP[23] = 0.f;
-            }
+        if (_control_status.flags.grav) {
+            HP[15] = _P[15][19] * H_mb[0] + _P[15][20] * H_mb[1] + _P[15][21] * H_mb[2] + H_x * _P[6][15] + H_y * _P[7][15] + _P[15][16] * H_norm + _P[15][17] * H_inc;
+        } else {
+            HP[15] = 0.f;
+        }
 
-            // H * _P * H' + R
-            fuse_data.innov_var(dim) = HP[index] * h_inv + HP[6] * rt_rz_ry_ex_hat[0] + HP[7] * rt_rz_ry_ex_hat[1] + HP[8] * rt_rz_ry_ex_hat[2] + HP[16] * rt_rz_ry_ex_h_inv - HP[17] * param_y - HP[18] * rt_rz_ry_ex_hat[2] + sq(noise_std);
+        if (_control_status.flags.mag_norm) {
+            HP[16] = _P[16][19] * H_mb[0] + _P[16][20] * H_mb[1] + _P[16][21] * H_mb[2] + H_x * _P[6][16] + H_y * _P[7][16] + _P[16][16] * H_norm + _P[16][17] * H_inc;
+        } else {
+            HP[16] = 0.f;
+        }
 
-            // h = m
-            // e = (y - bm) - R' * m
-            fuse_data.innov(dim) = mag_corr(dim) * h_inv - rt_rz_ry_ex;
+        if (_control_status.flags.mag_ang) {
+            HP[17] = _P[17][19] * H_mb[0] + _P[17][20] * H_mb[1] + _P[17][21] * H_mb[2] + H_x * _P[6][17] + H_y * _P[7][17] + _P[16][17] * H_norm + _P[17][17] * H_inc;
+            HP[18] = _P[18][19] * H_mb[0] + _P[18][20] * H_mb[1] + _P[18][21] * H_mb[2] + H_x * _P[6][18] + H_y * _P[7][18] + _P[16][18] * H_norm + _P[17][18] * H_inc;
+        } else {
+            HP[17] = 0.f;
+            HP[18] = 0.f;
+        }
 
-            fuse_data.test_ratio(dim) = sq(fuse_data.innov(dim) / gate) / fuse_data.innov_var(dim);
-            if (fuse_data.test_ratio(dim) > 1.f) {
-                flag |= 1 << (2 * dim);
-            } else {
-                if (!posterior_estimate(HP, fuse_data.innov_var(dim), fuse_data.innov(dim))) {
-                    flag |= 2 << (2 * dim);
-                }
+        if (_control_status.flags.mag_bias) {
+            HP[19] = _P[19][19] * H_mb[0] + _P[19][20] * H_mb[1] + _P[19][21] * H_mb[2] + H_x * _P[6][19] + H_y * _P[7][19] + _P[16][19] * H_norm + _P[17][19] * H_inc;
+            HP[20] = _P[19][20] * H_mb[0] + _P[20][20] * H_mb[1] + _P[20][21] * H_mb[2] + H_x * _P[6][20] + H_y * _P[7][20] + _P[16][20] * H_norm + _P[17][20] * H_inc;
+            HP[21] = _P[19][21] * H_mb[0] + _P[20][21] * H_mb[1] + _P[21][21] * H_mb[2] + H_x * _P[6][21] + H_y * _P[7][21] + _P[16][21] * H_norm + _P[17][21] * H_inc;
+        } else {
+            HP[19] = 0.f;
+            HP[20] = 0.f;
+            HP[21] = 0.f;
+        }
+
+        if (_control_status.flags.wind) {
+            HP[22] = _P[19][22] * H_mb[0] + _P[20][22] * H_mb[1] + _P[21][22] * H_mb[2] + H_x * _P[6][22] + H_y * _P[7][22] + _P[16][22] * H_norm + _P[17][22] * H_inc;
+            HP[23] = _P[19][23] * H_mb[0] + _P[20][23] * H_mb[1] + _P[21][23] * H_mb[2] + H_x * _P[6][23] + H_y * _P[7][23] + _P[16][23] * H_norm + _P[17][23] * H_inc;
+        } else {
+            HP[22] = 0.f;
+            HP[23] = 0.f;
+        }
+
+        // H * _P * H' + R
+        fuse_data.innov_var(2) = HP[19] * H_mb[0] + HP[20] * H_mb[1] + HP[21] * H_mb[2] + H_x * HP[6] + H_y * HP[7] + HP[16] * H_norm + HP[17] * H_inc + sq(noise_std);
+
+        // h = m
+        // e = (y - bm) - R' * m
+        fuse_data.innov(2) = h_obs(2) - h[2];
+
+        fuse_data.test_ratio(2) = sq(fuse_data.innov(2) / gate) / fuse_data.innov_var(2);
+        if (fuse_data.test_ratio(2) > 1.f) {
+            flag |= 1 << 4;
+        } else {
+            if (!posterior_estimate(HP, fuse_data.innov_var(2), fuse_data.innov(2))) {
+                flag |= 2 << 4;
             }
         }
 
@@ -1678,7 +2299,7 @@ namespace eskf {
          * _imu_hgt 在ESKF::predict_state()中更新
          * */
 //        // imu距地高度(向上为正)
-//        _imu_hgt = _terrain_vpos - _state.pos(2);
+//        _imu_hgt = _terrain - _state.pos_horz(2);
 
         // 光流距地高度(向上为正)
         _flow_hgt = _imu_hgt - offset_nav(2);
@@ -1896,7 +2517,7 @@ namespace eskf {
         return flag;
     }
 
-    uint8_t GESKF::fuse_range(const float &range, const Vector3f &offset_body, const Vector3f &offset_nav, const float &gate, const float &noise_std, FuseData<1> &fuse_data) {
+    uint8_t GESKF::fuse_range(const float &range, const Vector3f &offset_body, const Vector3f &offset_nav, const float &gate, const float &noise_std, FuseData<1> &fuse_data, bool attitude_inhibit) {
         uint8_t flag = 0;
         float HP[DIM];
 
@@ -1912,7 +2533,7 @@ namespace eskf {
          * _imu_hgt 在ESKF::predict_state()中更新
          * */
 //        // IMU距离地面的高度
-//        _imu_hgt = _terrain_vpos - _state.pos(2);
+//        _imu_hgt = _terrain - _state.pos_horz(2);
 
         // 传感器距地高度
         _range_hgt = _imu_hgt - offset_nav(2);
@@ -1921,80 +2542,155 @@ namespace eskf {
         _range_hgt = math::max(_range_hgt, _params.rng_gnd_clearance);
         _range = _range_hgt / _Rnb(2, 2);
 
-        const float Hx = -(offset_nav(1) + _range * _Rnb(1, 2)) / _Rnb(2, 2);
-        const float Hy = (offset_nav(0) + _range * _Rnb(0, 2)) / _Rnb(2, 2);
-        const float Hpz = -1.f / _Rnb(2, 2);
+        if (attitude_inhibit) {
+            const float Hpz = -1.f / _Rnb(2, 2);
 
-        HP[0] = _P[0][2] * Hpz + _P[0][6] * Hx + _P[0][7] * Hy;
-        HP[1] = _P[1][2] * Hpz + _P[1][6] * Hx + _P[1][7] * Hy;
-        HP[2] = _P[2][2] * Hpz + _P[2][6] * Hx + _P[2][7] * Hy;
-        HP[3] = _P[2][3] * Hpz + _P[3][6] * Hx + _P[3][7] * Hy;
-        HP[4] = _P[2][4] * Hpz + _P[4][6] * Hx + _P[4][7] * Hy;
-        HP[5] = _P[2][5] * Hpz + _P[5][6] * Hx + _P[5][7] * Hy;
-        HP[6] = _P[2][6] * Hpz + _P[6][6] * Hx + _P[6][7] * Hy;
-        HP[7] = _P[2][7] * Hpz + _P[6][7] * Hx + _P[7][7] * Hy;
-        HP[8] = _P[2][8] * Hpz + _P[6][8] * Hx + _P[7][8] * Hy;
-        HP[9] = _P[2][9] * Hpz + _P[6][9] * Hx + _P[7][9] * Hy;
-        HP[10] = _P[2][10] * Hpz + _P[6][10] * Hx + _P[7][10] * Hy;
-        HP[11] = _P[2][11] * Hpz + _P[6][11] * Hx + _P[7][11] * Hy;
+            HP[0] = _P[0][2] * Hpz;
+            HP[1] = _P[1][2] * Hpz;
+            HP[2] = _P[2][2] * Hpz;
+            HP[3] = _P[2][3] * Hpz;
+            HP[4] = _P[2][4] * Hpz;
+            HP[5] = _P[2][5] * Hpz;
+            HP[6] = _P[2][6] * Hpz;
+            HP[7] = _P[2][7] * Hpz;
+            HP[8] = _P[2][8] * Hpz;
+            HP[9] = _P[2][9] * Hpz;
+            HP[10] = _P[2][10] * Hpz;
+            HP[11] = _P[2][11] * Hpz;
 
-        if (_control_status.flags.acc_x_bias) {
-            HP[12] = _P[2][12] * Hpz + _P[6][12] * Hx + _P[7][12] * Hy;
+            if (_control_status.flags.acc_x_bias) {
+                HP[12] = _P[2][12] * Hpz;
+            } else {
+                HP[12] = 0.f;
+            }
+
+            if (_control_status.flags.acc_y_bias) {
+                HP[13] = _P[2][13] * Hpz;
+            } else {
+                HP[13] = 0.f;
+            }
+
+            if (_control_status.flags.acc_z_bias) {
+                HP[14] = _P[2][14] * Hpz;
+            } else {
+                HP[14] = 0.f;
+            }
+
+            if (_control_status.flags.grav) {
+                HP[15] = _P[2][15] * Hpz;
+            } else {
+                HP[15] = 0.f;
+            }
+
+            if (_control_status.flags.mag_norm) {
+                HP[16] = _P[2][16] * Hpz;
+            } else {
+                HP[16] = 0.f;
+            }
+
+            if (_control_status.flags.mag_ang) {
+                HP[17] = _P[2][17] * Hpz;
+                HP[18] = _P[2][18] * Hpz;
+            } else {
+                HP[17] = 0.f;
+                HP[18] = 0.f;
+            }
+
+            if (_control_status.flags.mag_bias) {
+                HP[19] = _P[2][19] * Hpz;
+                HP[20] = _P[2][20] * Hpz;
+                HP[21] = _P[2][21] * Hpz;
+            } else {
+                HP[19] = 0.f;
+                HP[20] = 0.f;
+                HP[21] = 0.f;
+            }
+
+            if (_control_status.flags.wind) {
+                HP[22] = _P[2][22] * Hpz;
+                HP[23] = _P[2][23] * Hpz;
+            } else {
+                HP[22] = 0.f;
+                HP[23] = 0.f;
+            }
+
+            fuse_data.innov_var(0) = HP[2] * Hpz + sq(noise_std);
         } else {
-            HP[12] = 0.f;
-        }
+            const float Hx = -(offset_nav(1) + _range * _Rnb(1, 2)) / _Rnb(2, 2);
+            const float Hy = (offset_nav(0) + _range * _Rnb(0, 2)) / _Rnb(2, 2);
+            const float Hpz = -1.f / _Rnb(2, 2);
 
-        if (_control_status.flags.acc_y_bias) {
-            HP[13] = _P[2][13] * Hpz + _P[6][13] * Hx + _P[7][13] * Hy;
-        } else {
-            HP[13] = 0.f;
-        }
+            HP[0] = _P[0][2] * Hpz + _P[0][6] * Hx + _P[0][7] * Hy;
+            HP[1] = _P[1][2] * Hpz + _P[1][6] * Hx + _P[1][7] * Hy;
+            HP[2] = _P[2][2] * Hpz + _P[2][6] * Hx + _P[2][7] * Hy;
+            HP[3] = _P[2][3] * Hpz + _P[3][6] * Hx + _P[3][7] * Hy;
+            HP[4] = _P[2][4] * Hpz + _P[4][6] * Hx + _P[4][7] * Hy;
+            HP[5] = _P[2][5] * Hpz + _P[5][6] * Hx + _P[5][7] * Hy;
+            HP[6] = _P[2][6] * Hpz + _P[6][6] * Hx + _P[6][7] * Hy;
+            HP[7] = _P[2][7] * Hpz + _P[6][7] * Hx + _P[7][7] * Hy;
+            HP[8] = _P[2][8] * Hpz + _P[6][8] * Hx + _P[7][8] * Hy;
+            HP[9] = _P[2][9] * Hpz + _P[6][9] * Hx + _P[7][9] * Hy;
+            HP[10] = _P[2][10] * Hpz + _P[6][10] * Hx + _P[7][10] * Hy;
+            HP[11] = _P[2][11] * Hpz + _P[6][11] * Hx + _P[7][11] * Hy;
 
-        if (_control_status.flags.acc_z_bias) {
-            HP[14] = _P[2][14] * Hpz + _P[6][14] * Hx + _P[7][14] * Hy;
-        } else {
-            HP[14] = 0.f;
-        }
+            if (_control_status.flags.acc_x_bias) {
+                HP[12] = _P[2][12] * Hpz + _P[6][12] * Hx + _P[7][12] * Hy;
+            } else {
+                HP[12] = 0.f;
+            }
 
-        if (_control_status.flags.grav) {
-            HP[15] = _P[2][15] * Hpz + _P[6][15] * Hx + _P[7][15] * Hy;
-        } else {
-            HP[15] = 0.f;
-        }
+            if (_control_status.flags.acc_y_bias) {
+                HP[13] = _P[2][13] * Hpz + _P[6][13] * Hx + _P[7][13] * Hy;
+            } else {
+                HP[13] = 0.f;
+            }
 
-        if (_control_status.flags.mag_norm) {
-            HP[16] = _P[2][16] * Hpz + _P[6][16] * Hx + _P[7][16] * Hy;
-        } else {
-            HP[16] = 0.f;
-        }
+            if (_control_status.flags.acc_z_bias) {
+                HP[14] = _P[2][14] * Hpz + _P[6][14] * Hx + _P[7][14] * Hy;
+            } else {
+                HP[14] = 0.f;
+            }
 
-        if (_control_status.flags.mag_ang) {
-            HP[17] = _P[2][17] * Hpz + _P[6][17] * Hx + _P[7][17] * Hy;
-            HP[18] = _P[2][18] * Hpz + _P[6][18] * Hx + _P[7][18] * Hy;
-        } else {
-            HP[17] = 0.f;
-            HP[18] = 0.f;
-        }
+            if (_control_status.flags.grav) {
+                HP[15] = _P[2][15] * Hpz + _P[6][15] * Hx + _P[7][15] * Hy;
+            } else {
+                HP[15] = 0.f;
+            }
 
-        if (_control_status.flags.mag_bias) {
-            HP[19] = _P[2][19] * Hpz + _P[6][19] * Hx + _P[7][19] * Hy;
-            HP[20] = _P[2][20] * Hpz + _P[6][20] * Hx + _P[7][20] * Hy;
-            HP[21] = _P[2][21] * Hpz + _P[6][21] * Hx + _P[7][21] * Hy;
-        } else {
-            HP[19] = 0.f;
-            HP[20] = 0.f;
-            HP[21] = 0.f;
-        }
+            if (_control_status.flags.mag_norm) {
+                HP[16] = _P[2][16] * Hpz + _P[6][16] * Hx + _P[7][16] * Hy;
+            } else {
+                HP[16] = 0.f;
+            }
 
-        if (_control_status.flags.wind) {
-            HP[22] = _P[2][22] * Hpz + _P[6][22] * Hx + _P[7][22] * Hy;
-            HP[23] = _P[2][23] * Hpz + _P[6][23] * Hx + _P[7][23] * Hy;
-        } else {
-            HP[22] = 0.f;
-            HP[23] = 0.f;
-        }
+            if (_control_status.flags.mag_ang) {
+                HP[17] = _P[2][17] * Hpz + _P[6][17] * Hx + _P[7][17] * Hy;
+                HP[18] = _P[2][18] * Hpz + _P[6][18] * Hx + _P[7][18] * Hy;
+            } else {
+                HP[17] = 0.f;
+                HP[18] = 0.f;
+            }
 
-        fuse_data.innov_var(0) = HP[2] * Hpz + HP[6]*Hx + HP[7]*Hy + sq(noise_std);
+            if (_control_status.flags.mag_bias) {
+                HP[19] = _P[2][19] * Hpz + _P[6][19] * Hx + _P[7][19] * Hy;
+                HP[20] = _P[2][20] * Hpz + _P[6][20] * Hx + _P[7][20] * Hy;
+                HP[21] = _P[2][21] * Hpz + _P[6][21] * Hx + _P[7][21] * Hy;
+            } else {
+                HP[19] = 0.f;
+                HP[20] = 0.f;
+                HP[21] = 0.f;
+            }
+
+            if (_control_status.flags.wind) {
+                HP[22] = _P[2][22] * Hpz + _P[6][22] * Hx + _P[7][22] * Hy;
+                HP[23] = _P[2][23] * Hpz + _P[6][23] * Hx + _P[7][23] * Hy;
+            } else {
+                HP[22] = 0.f;
+                HP[23] = 0.f;
+            }
+
+            fuse_data.innov_var(0) = HP[2] * Hpz + HP[6]*Hx + HP[7]*Hy + sq(noise_std);
+        }
 
         fuse_data.innov(0) = range - _range;
 

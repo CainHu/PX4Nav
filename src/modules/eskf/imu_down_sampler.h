@@ -12,8 +12,10 @@
 namespace eskf {
     class ImuDownSampler {
     public:
-        static constexpr int32_t dt_us_min {1000};
-        static constexpr int32_t dt_us_max {100000};
+//        static constexpr int32_t dt_us_min {1000};
+//        static constexpr int32_t dt_us_max {100000};
+        static constexpr int32_t dt_us_min {100};
+        static constexpr int32_t dt_us_max {10000};
 
         explicit ImuDownSampler(int32_t &target_dt_us) : _delta_vel(_imu_down_sampled.delta_vel), _target_dt_us(target_dt_us) {
             reset();
@@ -46,10 +48,14 @@ namespace eskf {
 
         int32_t &_target_dt_us;
 
-        float _target_dt_s{0.010f};
-        float _min_dt_s{0.005f};
+//        float _target_dt_s{0.010f};
+//        float _min_dt_s{0.005f};
 
-        float _delta_ang_dt_avg{0.005f};
+//        float _delta_ang_dt_avg{0.005f};
+
+        float _target_dt_s{0.001f};
+        float _min_dt_s{0.0005f};
+        float _delta_ang_dt_avg{0.001f};
     };
 }
 

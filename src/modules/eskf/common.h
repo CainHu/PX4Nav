@@ -3,6 +3,8 @@
 
 #include <matrix/math.hpp>
 
+#define NUM_GPS 2
+
 namespace eskf {
     using matrix::AxisAnglef;
     using matrix::Dcmf;
@@ -79,9 +81,9 @@ namespace eskf {
         float mag_ang_noise{1.0e-3f};      ///< 磁场角度量测噪声 (rad)
 
         // 误差因子上限
-        float gps_pos_horz_innov_gate {50.0f};   ///< gps水平位置误差因子上限
-        float gps_pos_vert_innov_gate {50.0f};   ///< gps垂直位置误差因子上限
-        float gps_vel_horz_innov_gate{50.0f};    ///< gps水平速度误差因子上限
+        float gps_pos_horz_innov_gate {5.0f};   ///< gps水平位置误差因子上限
+        float gps_pos_vert_innov_gate {5.0f};   ///< gps垂直位置误差因子上限
+        float gps_vel_horz_innov_gate{5.0f};    ///< gps水平速度误差因子上限
         float gps_vel_vert_innov_gate{5.0f};    ///< gps垂直速度误差因子上限
         float ev_pos_horz_innov_gate {5.0f};    ///< 外部视觉水平位置误差因子上限
         float ev_pos_vert_innov_gate {5.0f};    ///< 外部视觉垂直位置误差因子上限
@@ -135,11 +137,35 @@ namespace eskf {
         float var_mag_bias_min {1e-6f};         ///< 磁力计偏移的最小方差
         float var_wind_min {1e-6f};             ///< 风速的最小方差
 
+        /* 气压计偏移融合参数 */
+        float alpha_terrain {0.01f};            ///< 地形高度低通滤波系数
 
-        float rng_gnd_clearance {0.1f};       ///< 测距仪最小距离
+        /* 测距仪融合参数 */
+        float alpha_baro_bias {0.01f};          ///< 气压计偏移低通滤波系数
+        float rng_gnd_clearance {0.1f};         ///< 测距仪最小距离
     };
 
     struct RunnerParameters {
+        /* 磁场融合相关的独立常数 */
+        static constexpr uint8_t MAG_FUSE_TYPE_AUTO {0};	///< The selection of either heading or 3D magnetometer fusion will be automatic
+        static constexpr uint8_t MAG_FUSE_TYPE_HEADING {1};	///< Simple yaw angle fusion will always be used. This is less accurate, but less affected by earth field distortions. It should not be used for pitch angles outside the range from -60 to +60 deg
+        static constexpr uint8_t MAG_FUSE_TYPE_3D {2};	    ///< Magnetometer 3-axis fusion will always be used. This is more accurate, but more affected by localised earth field distortions
+        static constexpr uint8_t MAG_FUSE_TYPE_UNUSED {3};	///< Not implemented
+        static constexpr uint8_t MAG_FUSE_TYPE_INDOOR {4};	///< The same as option 0, but magnetometer or yaw fusion will not be used unless earth frame external aiding (GPS or External Vision) is being used. This prevents inconsistent magnetic fields associated with indoor operation degrading state estimates.
+        static constexpr uint8_t MAG_FUSE_TYPE_NONE	{5};	///< Do not use magnetometer under any circumstance. Other sources of yaw may be used if selected via the EKF2_AID_MASK parameter.
+
+        static constexpr uint8_t MAG_EARTH_FUSE_TYPE_NORM {0};
+        static constexpr uint8_t MAG_EARTH_FUSE_TYPE_ANG {1};
+        static constexpr uint8_t MAG_EARTH_FUSE_TYPE_3D {2};
+        static constexpr uint8_t MAG_EARTH_TYPE_TYPE_NONE {3};
+
+        /* 高度融合相关的独立常数 */
+        static constexpr uint8_t HGT_SENSOR_AUTO {0};
+        static constexpr uint8_t HGT_SENSOR_BARO {1};
+        static constexpr uint8_t HGT_SENSOR_GPS {2};
+        static constexpr uint8_t HGT_SENSOR_RANGE {3};
+        static constexpr uint8_t HGT_SENSOR_EV {4};
+
         /* 传感器相对于imu最新的采样数据的的最大时间间隔(us) */
         static constexpr uint64_t GPS_MAX_INTERVAL {500000};    ///< GPS量测的最大时间间隔 (us), 默认为0.5s
         static constexpr uint64_t BARO_MAX_INTERVAL {200000};   ///< 气压计的最大时间间隔 (us), 默认为0.2s
@@ -150,9 +176,14 @@ namespace eskf {
 
         static constexpr uint64_t BADACC_PROBATION {1000000};   ///< 持续多少时间内没有检测出过垂直加速度异常, 才能认为是垂直加速度正常 (us), 默认为1s
         static constexpr uint64_t HGT_FUSE_TIMEOUT {5000000};   ///< 超过多少时间没进行高度融合, 则需要重置eskf的高度状态, 默认为5s
+        static constexpr uint64_t MAG_FUSE_TIMEOUT {5000000};   ///< 超过多少时间没进行磁场数据融合, 则需要重新对齐磁场并重置磁场相关状态, 默认为5s
+
+        static constexpr uint64_t FLOW_FUSE_TIMEOUT {7000000};
+        static constexpr uint64_t HORZ_FUSE_TIMEOUT {7000000};
 
         /* 传感器延迟(ms) */
-        float gps_delay_ms {110.f};
+//        float gps_delay_ms {110.f};
+        float gps_delay_ms {0.f};
         float ev_delay_ms {175.0f};
         float flow_delay_ms {5.0f};
         float baro_delay_ms {0.0f};
@@ -161,16 +192,41 @@ namespace eskf {
         float airspeed_delay_ms {100.0f};
 
         /* 传感器安装距离(m) */
-        Vector3f imu_pos_body;			///< imu在机体系的坐标
-        Vector3f gps0_pos_body;  		///< GPS-0天线在机体系的坐标
-        Vector3f gps1_pos_body;  		///< GPS-1天线在机体系的坐标
+        Vector3f imu_pos_body {};			///< imu在机体系的坐标
+        Vector3f gps_pos_body[NUM_GPS] {{-0.2f, -0.15f, -0.02f}, {-0.2f, 0.15f, -0.02f}}; ///< GPS天线在机体系的坐标
         Vector3f ev_pos_body;			///< 外部视觉在机体系的坐标
         Vector3f flow_pos_body;			///< 光流在机体系的坐标
         Vector3f range_pos_body;		///< 测距仪在机体系的坐标
         Vector3f baro_pos_body;			///< 气压计在机体系的坐标
 
+        /* 磁场融合相关的独立量 */
         bool check_mag_strength {true};
+        uint8_t mag_body_fusion_type {MAG_FUSE_TYPE_3D};
+        uint8_t mag_earth_fusion_type {MAG_EARTH_FUSE_TYPE_3D};
 
+        /* 高度融合相关的独立量 */
+        uint8_t hgt_sensor_type {RunnerParameters::HGT_SENSOR_GPS};
+
+        /* 测距仪 */
+        float range_cos_max_tilt{0.7071f};
+        float rng_gnd_clearance {0.4f};
+
+        /* 光流 */
+        float flow_noise{0.15f};
+        float flow_noise_qual_min{0.5f};
+        float flow_max_rate {2.f * M_PI};
+        int32_t flow_qual_min{1};
+
+        float acc_bias_lim{0.4f};		///< maximum accel bias magnitude (m/sec**2)
+        float acc_bias_inhibit_acc_lim_max{25.0f};	///< learning is disabled if the magnitude of the IMU acceleration vector is greater than this (m/sec**2)
+        float acc_bias_inhibit_gyr_lim_max{3.0f};
+        float acc_bias_inhibit_acc_lim_min{0.5f};
+        float acc_bias_inhibit_gyr_lim_min{0.06f};
+        float acc_bias_inhibit_tc{0.5f};
+
+        float vert_innov_test_lim {3.0f};	///< Number of standard deviations allowed before the combined vertical velocity and position test is declared as failed
+        float mag_anomalies_max_hgt {1.5f}; ///< 离地多少米可用认为是脱离了磁场异常区域 (m)
+        float gyro_orth_mag_gate {0.25f};   ///< 角速度垂直于磁场的分量的模值大于该数值时, 才能激活磁力计偏移
     };
 
     enum class velocity_frame_t : uint8_t {
@@ -198,12 +254,13 @@ namespace eskf {
     };
 
     struct GpsSample : BaseSample {
-        Vector2f 	pos;		///< 水平位置(相对于home点的北东向为正)
+        Vector2f 	pos_horz;	///< 水平位置(相对于home点的北东向为正)
         float		hgt{};		///< 海拔高度(向上为正)
         Vector3f	vel;		///< gps速度(北东地)
         float		hacc{};		///< 水平位置标准差
         float		vacc{};		///< 海拔高度标准差
         float		sacc{};		///< 速度标准差
+        uint8_t     fix_type{}; ///< 0-1: no fix, 2: 2D fix, 3: 3D fix, 4: RTCM code differential, 5: Real-Time Kinematic
     };
 
     struct MagSample : BaseSample {
@@ -255,6 +312,13 @@ namespace eskf {
         Vector2f    wind;	        	///< 风速
     };
 
+    struct PreIntegralSample : BaseSample {
+        float dt {0.f};
+        Dcmf dr;
+        Vector3f dv;
+        Vector3f dp;
+    };
+
     struct ErrorState {
         Vector3f pos;				///< 位置
         Vector3f vel;				///< 速度
@@ -289,33 +353,63 @@ namespace eskf {
         matrix::Vector<float, N> test_ratio;    ///< 融合误差的平差与后验协方差之比
     };
 
-    // define structure used to communicate innovation test failures
+    // 最多支持8个GPS, 若GPS个数大于8, 需要修改uint64_t
     union innovation_fault_status_u {
         struct {
-            bool reject_gps0_pos_horz: 1;       ///< 0 拒绝gps-0水平位置融合
-            bool reject_gps0_pos_vert: 1;       ///< 1 拒绝gps-0垂直位置融合
-            bool reject_gps0_vel_horz: 1;       ///< 2 拒绝gps-0水平速度融合
-            bool reject_gps0_vel_vert: 1;       ///< 3 拒绝gps-0垂直速度融合
-            bool reject_gps1_pos_horz: 1;       ///< 4 拒绝gps-1水平位置融合
-            bool reject_gps1_pos_vert: 1;       ///< 5 拒绝gps-1垂直位置融合
-            bool reject_gps1_vel_horz: 1;       ///< 6 拒绝gps-1水平速度融合
-            bool reject_gps1_vel_vert: 1;       ///< 7 拒绝gps-1垂直速度融合
-            bool reject_ev_pos_horz:  1;        ///< 8 拒绝ev水平位置融合
-            bool reject_ev_pos_vert:  1;        ///< 9 拒绝ev垂直位置融合
-            bool reject_ev_vel_horz:  1;        ///< 10 拒绝ev水平速度融合
-            bool reject_ev_vel_vert:  1;        ///< 11 拒绝ev垂直速度融合
-            bool reject_optflow_x:    1;        ///< 12 拒绝光流x轴融合
-            bool reject_optflow_y:    1;        ///< 13 拒绝光流y轴融合
-            bool reject_range:        1;        ///< 14 拒绝测距仪融合
-            bool reject_baro:         1;        ///< 15 拒绝气压计融合
-            bool reject_mag_body_x:   1;        ///< 16 拒绝磁力计x轴融合
-            bool reject_mag_body_y:   1;        ///< 17 拒绝磁力计y轴融合
-            bool reject_mag_body_z:   1;        ///< 18 拒绝磁力计z轴融合
-            bool reject_mag_norm:     1;        ///< 19 拒绝磁场强度融合
-            bool reject_mag_ang:      1;        ///< 20 拒绝磁场角度融合
-            bool reject_airspeed:     1;        ///< 21 拒绝风速计融合
+            bool reject_baro:         1;        ///< 0 拒绝气压计融合
+            bool reject_range:        1;        ///< 1 拒绝测距仪融合
+            bool reject_mag_body_x:   1;        ///< 2 拒绝磁力计x轴融合
+            bool reject_mag_body_y:   1;        ///< 3 拒绝磁力计y轴融合
+            bool reject_mag_body_z:   1;        ///< 4 拒绝磁力计z轴融合
+            bool reject_mag_norm:     1;        ///< 5 拒绝磁场强度融合
+            bool reject_mag_inc:      1;        ///< 6 拒绝磁场倾角融合
+            bool reject_mag_dec:      1;        ///< 7 拒绝磁场偏角融合
+            bool reject_airspeed:     1;        ///< 8 拒绝风速计融合
+            bool reject_optflow_x:    1;        ///< 9 拒绝光流x轴融合
+            bool reject_optflow_y:    1;        ///< 10 拒绝光流y轴融合
+            bool reject_ev_pos_x:  1;           ///< 11 拒绝视觉x轴位置融合
+            bool reject_ev_pos_y:  1;           ///< 12 拒绝视觉y轴位置融合
+            bool reject_ev_pos_z:  1;           ///< 13 拒绝视觉z轴位置融合
+            bool reject_ev_vel_x:  1;           ///< 14 拒绝视觉x轴速度融合
+            bool reject_ev_vel_y:  1;           ///< 15 拒绝视觉y轴速度融合
+            bool reject_ev_vel_z:  1;           ///< 15 拒绝视觉z轴速度融合
+            uint8_t reject_gps_pos_x: NUM_GPS;  ///< 15 + N_GPS 拒绝gps的x轴水平位置融合
+            uint8_t reject_gps_pos_y: NUM_GPS;  ///< 15 + 2 * N_GPS 拒绝gps的y轴水平位置融合
+            uint8_t reject_gps_pos_z: NUM_GPS;  ///< 15 + 3 * N_GPS 拒绝gps的z轴水平位置融合
+            uint8_t reject_gps_vel_x: NUM_GPS;  ///< 15 + 4 * N_GPS 拒绝gps的x轴水平速度融合
+            uint8_t reject_gps_vel_y: NUM_GPS;  ///< 15 + 5 * N_GPS 拒绝gps的y轴水平速度融合
+            uint8_t reject_gps_vel_z: NUM_GPS;  ///< 15 + 6 * N_GPS 拒绝gps的z轴水平速度融合
         } flags;
-        uint32_t value;
+        uint64_t value;
+    };
+
+    union covariance_fault_status_u {
+        struct {
+            bool unhealthy_baro: 1;
+            bool unhealthy_range: 1;
+            bool unhealthy_mag_body_x: 1;
+            bool unhealthy_mag_body_y: 1;
+            bool unhealthy_mag_body_z: 1;
+            bool unhealthy_mag_norm: 1;
+            bool unhealthy_mag_inc: 1;
+            bool unhealthy_mag_dec: 1;
+            bool unhealthy_airspeed: 1;
+            bool unhealthy_optflow_x: 1;
+            bool unhealthy_optflow_y: 1;
+            bool unhealthy_ev_pos_x: 1;
+            bool unhealthy_ev_pos_y: 1;
+            bool unhealthy_ev_pos_z: 1;
+            bool unhealthy_ev_vel_x: 1;
+            bool unhealthy_ev_vel_y: 1;
+            bool unhealthy_ev_vel_z: 1;
+            uint8_t unhealthy_gps_pos_x: NUM_GPS;
+            uint8_t unhealthy_gps_pos_y: NUM_GPS;
+            uint8_t unhealthy_gps_pos_z: NUM_GPS;
+            uint8_t unhealthy_gps_vel_x: NUM_GPS;
+            uint8_t unhealthy_gps_vel_y: NUM_GPS;
+            uint8_t unhealthy_gps_vel_z: NUM_GPS;
+        } flags;
+        uint64_t value;
     };
 
     // 协方差
@@ -365,12 +459,14 @@ namespace eskf {
         struct {
             bool tilt_align  : 1; ///< 0 - true if the filter tilt alignment is complete
             bool yaw_align   : 1; ///< 1 - true if the filter yaw alignment is complete
-            bool gps         : 1; ///< 2 - true if GPS measurement fusion is intended
+            bool gps_vel     : 1; ///< 2 - true if GPS measurement fusion is intended
+            bool gps_horz    : 1;
             bool opt_flow    : 1; ///< 3 - true if optical flow measurements fusion is intended
             bool acc_x_bias  : 1; ///< 4 - true if x轴加速度计偏移融合被激活
             bool acc_y_bias  : 1; ///< 5 - true if x轴加速度计偏移融合被激活
             bool acc_z_bias  : 1; ///< 6 - true if x轴加速度计偏移融合被激活
             bool grav        : 1; ///< 7 - true if 重力加速度融合被激活
+            bool mag         : 1; ///< 所有与磁场有关的状态被激活
             bool mag_norm    : 1; ///< 8 - true if 磁场强度融合被激活
             bool mag_ang     : 1; ///< 9 - true if 磁偏角融合被激活
             bool mag_bias    : 1; ///< 10 - true if 磁力计偏移融合被激活
@@ -379,7 +475,8 @@ namespace eskf {
             bool baro_hgt    : 1; ///< 13 - true when baro height is being fused as a primary height reference
             bool rng_hgt     : 1; ///< 14 - true when range finder height is being fused as a primary height reference
             bool gps_hgt     : 1; ///< 15 - true when GPS height is being fused as a primary height reference
-            bool ev_pos      : 1; ///< 16 - true when local position data fusion from external vision is intended
+            bool ev_horz     : 1; ///< 16 - true when local position data fusion from external vision is intended
+            bool none_hgt    : 1; ///< 不进行高度融合
             bool ev_yaw      : 1; ///< 17 - true when yaw data from external vision measurements fusion is intended
             bool ev_hgt      : 1; ///< 18 - true when height data from external vision measurements is being fused
             bool fuse_beta   : 1; ///< 19 - true when synthetic sideslip measurements are being fused
@@ -390,6 +487,7 @@ namespace eskf {
             bool gnd_effect  : 1; ///< 24 - true when protection from ground effect induced static pressure rise is active
             bool rng_stuck   : 1; ///< 25 - true when rng data wasn't ready for more than 10s and new rng values haven't changed enough
             bool gps_yaw     : 1; ///< 26 - true when yaw (not ground course) data fusion from a GPS receiver is intended
+            bool mag_aligned : 1; ///< 磁场是否已经对准
             bool mag_aligned_in_flight   : 1; ///< 27 - true when the in-flight mag field alignment has been completed
             bool ev_vel      : 1; ///< 28 - true when local frame velocity data fusion from external vision measurements is intended
             bool synthetic_mag_z : 1; ///< 29 - true when we are using a synthesized measurement for the magnetometer Z component

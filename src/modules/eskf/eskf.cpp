@@ -120,7 +120,7 @@ namespace eskf {
         _state.wind *= math::constrain(1.f - _dt * _params.wind_tau_inv, 0.f, 1.f);
 
         // IMU距离地面的高度
-        _imu_hgt = _terrain_vpos - _state.pos(2);
+        _imu_hgt = -_state.pos(2) - _terrain;
     }
 
     bool ESKF::posterior_estimate(const float (&HP)[DIM], const float &innov_var, const float &innov) {
@@ -359,6 +359,29 @@ namespace eskf {
         }
 
         regular_covariance_to_symmetric<DIM>(0);
+    }
+
+    void ESKF::calculate_dist_bottom_imu(float range, const Vector3f &range_offset_nav) {
+        static constexpr float cos_60deg = 0.5f;
+
+        // 如果倾转角度大于60°, 则不进行融合
+        if (_Rnb(2, 2) <  cos_60deg) {
+            return;
+        }
+
+        _dist_bottom_imu = math::max(_params.rng_gnd_clearance, range * _Rnb(2, 2)) + range_offset_nav(2);
+    }
+
+    void ESKF::calculate_baro_imu(float baro, const Vector3f &baro_offset_nav) {
+        _baro_imu = baro + baro_offset_nav(2);
+    }
+
+    void ESKF::correct_terrain(float gps_hgt_imu) {
+        _terrain += _params.alpha_terrain * (_dist_bottom_imu - _terrain - gps_hgt_imu);
+    }
+
+    void ESKF::correct_baro_bias(float gps_hgt_imu) {
+        _baro_bias += _params.alpha_baro_bias * (_baro_imu - _baro_bias - gps_hgt_imu);
     }
 
 }
