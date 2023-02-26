@@ -13,17 +13,17 @@ namespace ahrs {
     public:
         explicit AHRS(float dt);
 
-        void feed_aux_meas(matrix::Vector3f &meas_nav, matrix::Vector3f &meas_body, float k);
+        void feed_aux_meas(matrix::Vector3f &meas_nav, matrix::Vector3f &meas_body, float k=K1);
         void feed_imu(matrix::Vector3f &delta_ang, matrix::Vector3f &delta_vel, float dt);
         void feed_vel(matrix::Vector3f &vel);
         void fit();
 
         void reset();
 
-        matrix::Quatf q() const { return _q; }
-        matrix::Dcmf r() const { return _r; }
-        matrix::Vector3f v() const { return _v; }
-        matrix::Vector3f delta_ang_bias() const { return _delta_ang_bias; }
+        matrix::Quatf &q() { return _q; }
+        matrix::Dcmf &r() { return _r; }
+        matrix::Vector3f &v() { return _v; }
+        matrix::Vector3f &delta_ang_bias() { return _delta_ang_bias; }
 
     protected:
         matrix::Dcmf _r;
@@ -38,10 +38,10 @@ namespace ahrs {
         matrix::Vector3f _error_vel;
 
     private:
-        static constexpr float KP {1.f};
-        static constexpr float KI {100.f};
+        static constexpr float K0 {0.1f};
+        static constexpr float K1 {0.05f};
+        static constexpr float K2 {4.f};
         static constexpr float G {9.8f};
-        static constexpr float KG {4.f};
 
         static void quaternion_from_axis_angle(matrix::Quatf &q, const matrix::Vector3f &axis_angle) {
             /*

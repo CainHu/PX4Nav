@@ -25,12 +25,12 @@ namespace ahrs {
     }
 
     void AHRS::feed_vel(matrix::Vector3f &vel) {
-        _error_delta_angle += 0.05f * (_delta_vel % (_r.transpose() * (vel - _v)));
-        _error_vel += 4.f * (vel - _v);
+        _error_delta_angle += K1 * (_delta_vel % (_r.transpose() * (vel - _v)));
+        _error_vel += K2 * (vel - _v);
     }
 
     void AHRS::feed_aux_meas(matrix::Vector3f &meas_nav, matrix::Vector3f &meas_body, float k) {
-        _error_delta_angle += 0.5f * (meas_body % (_r.transpose() * meas_nav)) * _dt;
+        _error_delta_angle += k * (meas_body.unit() % (_r.transpose() * meas_nav.unit())) * _dt;
     }
 
     void AHRS::fit() {
@@ -42,7 +42,7 @@ namespace ahrs {
 
         _v += _error_vel * _dt;
 
-        _delta_ang_bias += 0.1f * _error_delta_angle * _dt;
+        _delta_ang_bias += K0 * _error_delta_angle * _dt;
 
         _error_vel.setZero();
         _error_delta_angle.setZero();
