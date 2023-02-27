@@ -11,26 +11,32 @@ namespace ahrs {
 
     void AHRS::feed_imu(matrix::Vector3f &delta_ang, matrix::Vector3f &delta_vel, float dt) {
         _dt = dt;
-        _delta_vel = delta_vel;
-        _delta_angle = delta_ang + _delta_ang_bias;
+
+        _delta_t += dt;
+        _delta_vel += matrix::Dcmf(_delta_q) * delta_vel;
+        _delta_angle_correct = delta_ang + _delta_ang_offset;
 
         matrix::Quatf dq;
-        quaternion_from_axis_angle(dq, _delta_angle);
+        quaternion_from_axis_angle(dq, _delta_angle_correct);
+        _delta_q = _delta_q * dq;
+        _delta_q.normalized();
+
         _q = _q * dq;
         _q.normalized();
         _r = _q;
 
-        _v += _r * _delta_vel;
+        _v += _r * delta_vel;
         _v(2) += G * _dt;
     }
 
     void AHRS::feed_vel(matrix::Vector3f &vel) {
-        _error_delta_angle += K1 * (_delta_vel % (_r.transpose() * (vel - _v)));
+        float scale = G * G * _delta_t;
+        _error_delta_angle += (K1 / scale) * (_delta_vel % (_r.transpose() * (vel - _v)));
         _error_vel += K2 * (vel - _v);
     }
 
     void AHRS::feed_aux_meas(matrix::Vector3f &meas_nav, matrix::Vector3f &meas_body, float k) {
-        _error_delta_angle += k * (meas_body.unit() % (_r.transpose() * meas_nav.unit())) * _dt;
+        _error_delta_angle += k * (meas_body.unit() % (_r.transpose() * meas_nav.unit())) * _delta_t;
     }
 
     void AHRS::fit() {
@@ -42,7 +48,11 @@ namespace ahrs {
 
         _v += _error_vel * _dt;
 
-        _delta_ang_bias += K0 * _error_delta_angle * _dt;
+        _delta_ang_offset += K0 * _error_delta_angle * _dt;
+
+        _delta_t = 0.f;
+        _delta_q.setIdentity();
+        _delta_vel.setZero();
 
         _error_vel.setZero();
         _error_delta_angle.setZero();
@@ -52,10 +62,13 @@ namespace ahrs {
         _r.setIdentity();
         _q.setIdentity();
         _v.setZero();
-        _delta_ang_bias.setZero();
+        _delta_ang_offset.setZero();
+        _delta_angle_correct.setZero();
 
-        _delta_angle.setZero();
+        _delta_t = 0.f;
+        _delta_q.setIdentity();
         _delta_vel.setZero();
+
         _error_delta_angle.setZero();
         _error_vel.setZero();
     }

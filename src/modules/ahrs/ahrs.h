@@ -23,23 +23,28 @@ namespace ahrs {
         matrix::Quatf &q() { return _q; }
         matrix::Dcmf &r() { return _r; }
         matrix::Vector3f &v() { return _v; }
-        matrix::Vector3f &delta_ang_bias() { return _delta_ang_bias; }
+        matrix::Vector3f &delta_ang_offset() { return _delta_ang_offset; }
+
+        const matrix::Vector3f &get_delta_ang_correct() const { return _delta_angle_correct; }
 
     protected:
+        float _dt;
         matrix::Dcmf _r;
         matrix::Quatf _q;
         matrix::Vector3f _v;
-        matrix::Vector3f _delta_ang_bias;
+        matrix::Vector3f _delta_ang_offset;
+        matrix::Vector3f _delta_angle_correct;
 
-        float _dt;
-        matrix::AxisAnglef _delta_angle;
+        float _delta_t {0.f};
+        matrix::Quatf _delta_q;
         matrix::Vector3f _delta_vel;
+
         matrix::Vector3f _error_delta_angle;
         matrix::Vector3f _error_vel;
 
     private:
-        static constexpr float K0 {0.1f};
-        static constexpr float K1 {0.05f};
+        static constexpr float K0 {0.05f};
+        static constexpr float K1 {0.01f};
         static constexpr float K2 {4.f};
         static constexpr float G {9.8f};
 
