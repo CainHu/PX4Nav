@@ -423,7 +423,7 @@ namespace eskf {
         float get_flow_range() const { return _flow_range; };
         float get_range() const { return _range; };
         float get_range_hgt() const { return _range_hgt; };
-
+        float get_baro_bias() const { return _baro_bias; }
 
         // Setters
 //        void set_dt(const float &dt) { _dt = dt; _dt2 = dt * dt; _dt4 = _dt2 * _dt2; };
@@ -456,6 +456,7 @@ namespace eskf {
         void set_bias_magnet(const Vector3f &b_mag) { _state.mag_bias = b_mag; };
         void set_wind(const Vector2f &w) { _state.wind = w; };
         void set_state(const StateSample &state) { _state = state; };
+        void set_terrain(float terrain) { _terrain = terrain; };
         void set_baro_imu(float baro_imu) { _baro_imu = baro_imu; };
         void set_dist_bottom_imu(float dist_bottom_imu) { _dist_bottom_imu = dist_bottom_imu; };
 

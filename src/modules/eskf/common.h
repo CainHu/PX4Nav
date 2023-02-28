@@ -67,8 +67,8 @@ namespace eskf {
         float acc_bad_noise {4.9f};        ///< 工况差时的加速度量测噪声 (m/s^2)
         float gps_pos_horz_noise {0.5f};   ///< gps水平位置量测噪声 (m)
         float gps_pos_vert_noise {0.5f};   ///< gps垂直位置量测噪声 (m)
-        float gps_vel_horz_noise {0.5f};   ///< gps水平速度量测噪声 (m/s)
-        float gps_vel_vert_noise {0.5f};   ///< gps垂直速度量测噪声 (m/s)
+        float gps_vel_horz_noise {0.3f};   ///< gps水平速度量测噪声 (m/s)
+        float gps_vel_vert_noise {0.3f};   ///< gps垂直速度量测噪声 (m/s)
         float ev_pos_horz_noise {0.02f};   ///< 外部视觉水平位置量测噪声 (m)
         float ev_pos_vert_noise {0.02f};   ///< 外部视觉垂直位置量测噪声 (m)
         float ev_vel_horz_noise {0.02f};   ///< 外部视觉水平速度量测噪声 (m/s)
@@ -81,20 +81,20 @@ namespace eskf {
         float mag_ang_noise{1.0e-3f};      ///< 磁场角度量测噪声 (rad)
 
         // 误差因子上限
-        float gps_pos_horz_innov_gate {5.0f};   ///< gps水平位置误差因子上限
-        float gps_pos_vert_innov_gate {5.0f};   ///< gps垂直位置误差因子上限
-        float gps_vel_horz_innov_gate{5.0f};    ///< gps水平速度误差因子上限
-        float gps_vel_vert_innov_gate{5.0f};    ///< gps垂直速度误差因子上限
+        float gps_pos_horz_innov_gate {50.0f};   ///< gps水平位置误差因子上限
+        float gps_pos_vert_innov_gate {50.0f};   ///< gps垂直位置误差因子上限
+        float gps_vel_horz_innov_gate{50.0f};    ///< gps水平速度误差因子上限
+        float gps_vel_vert_innov_gate{50.0f};    ///< gps垂直速度误差因子上限
         float ev_pos_horz_innov_gate {5.0f};    ///< 外部视觉水平位置误差因子上限
         float ev_pos_vert_innov_gate {5.0f};    ///< 外部视觉垂直位置误差因子上限
         float ev_vel_horz_innov_gate {3.0f};    ///< 外部视觉水平速度误差因子上限
         float ev_vel_vert_innov_gate {3.0f};    ///< 外部视觉垂直速度误差因子上限
-        float flow_innov_gate {0.15f};          ///< 光流误差因子上限
-        float baro_innov_gate {2.0f};           ///< 气压计误差因子上限
-        float range_innov_gate {0.1f};          ///< 测距仪误差因子上限
-        float mag_body_innov_gate {5.0e-2f};    ///< 磁力计误差因子上限
-        float mag_norm_innov_gate {1.0e-3f};    ///< 磁场强度误差因子上限
-        float mag_ang_innov_gate {1.0e-3f};     ///< 磁场角度误差因子上限
+        float flow_innov_gate {3.f};          ///< 光流误差因子上限
+        float baro_innov_gate {5.0f};           ///< 气压计误差因子上限
+        float range_innov_gate {5.f};          ///< 测距仪误差因子上限
+        float mag_body_innov_gate {3.f};    ///< 磁力计误差因子上限
+        float mag_norm_innov_gate {3.f};    ///< 磁场强度误差因子上限
+        float mag_ang_innov_gate {3.f};     ///< 磁场角度误差因子上限
 
         /* 常值状态的初值 */
 //        float g; {}
@@ -138,10 +138,10 @@ namespace eskf {
         float var_wind_min {1e-6f};             ///< 风速的最小方差
 
         /* 气压计偏移融合参数 */
-        float alpha_terrain {0.01f};            ///< 地形高度低通滤波系数
+        float alpha_terrain {0.005f};            ///< 地形高度低通滤波系数
 
         /* 测距仪融合参数 */
-        float alpha_baro_bias {0.01f};          ///< 气压计偏移低通滤波系数
+        float alpha_baro_bias {0.001f};          ///< 气压计偏移低通滤波系数
         float rng_gnd_clearance {0.1f};         ///< 测距仪最小距离
     };
 
@@ -182,11 +182,15 @@ namespace eskf {
         static constexpr uint64_t HORZ_FUSE_TIMEOUT {7000000};
 
         /* 传感器延迟(ms) */
-//        float gps_delay_ms {110.f};
         float gps_delay_ms {0.f};
-        float ev_delay_ms {175.0f};
-        float flow_delay_ms {5.0f};
-        float baro_delay_ms {0.0f};
+        float ev_delay_ms {0.f};
+        float flow_delay_ms {0.f};
+        float baro_delay_ms {0.f};
+
+//        float gps_delay_ms {110.f};
+//        float ev_delay_ms {175.0f};
+//        float flow_delay_ms {5.0f};
+//        float baro_delay_ms {0.0f};
         float range_delay_ms {5.0f};
         float mag_delay_ms {0.0f};
         float airspeed_delay_ms {100.0f};
@@ -196,8 +200,8 @@ namespace eskf {
         Vector3f gps_pos_body[NUM_GPS] {{-0.2f, -0.15f, -0.02f}, {-0.2f, 0.15f, -0.02f}}; ///< GPS天线在机体系的坐标
         Vector3f ev_pos_body;			///< 外部视觉在机体系的坐标
         Vector3f flow_pos_body;			///< 光流在机体系的坐标
-        Vector3f range_pos_body;		///< 测距仪在机体系的坐标
-        Vector3f baro_pos_body;			///< 气压计在机体系的坐标
+        Vector3f range_pos_body {-0.01f, 0.f, 0.02f};		///< 测距仪在机体系的坐标
+        Vector3f baro_pos_body {0.02f, 0.f, 0.01f};			///< 气压计在机体系的坐标
 
         /* 磁场融合相关的独立量 */
         bool check_mag_strength {true};
@@ -205,7 +209,7 @@ namespace eskf {
         uint8_t mag_earth_fusion_type {MAG_EARTH_FUSE_TYPE_3D};
 
         /* 高度融合相关的独立量 */
-        uint8_t hgt_sensor_type {RunnerParameters::HGT_SENSOR_GPS};
+        uint8_t hgt_sensor_type {RunnerParameters::HGT_SENSOR_AUTO};
 
         /* 测距仪 */
         float range_cos_max_tilt{0.7071f};

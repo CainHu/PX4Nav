@@ -197,7 +197,7 @@ namespace eskf {
     private:
 
         // TODO: gps数据的精度
-        float _gps_horz_error_norm {1.f};
+        float _gps_horz_error_norm {10.f};
 
         ImuSample _imu_sample_delay {};
         GpsSample _gps_sample_delay[N_GPS] {};
@@ -402,7 +402,7 @@ namespace eskf {
                         _gps_state.hgt_imu[i] = _gps_sample_delay[i].hgt + _gps_state.offset_nav[i](2);
                         _gps_state.vel_imu[i] = _gps_sample_delay[i].vel - _gps_state.w_cross_offset_nav[i];
 
-                        _gps_state.checks_passed[i] = _gps_sample_delay[i].fix_type > 4;
+                        _gps_state.checks_passed[i] = _gps_sample_delay[i].fix_type >= 3;
                     } else {
                         // TODO: 也许还有别的处理
                     }
@@ -418,6 +418,9 @@ namespace eskf {
                 if (_baro_state.data_ready) {
                     //TODO: baro的采样间隔(_baro_sample_delay.time_us - _time_prev_baro_us)需要用于气压计偏移估计
                     _baro_state.offset_nav = _eskf._Rnb * _params.baro_pos_body;
+
+                    // TODO: fault的判断
+                    _baro_state.faulty = false;
                 }
 //                std::cout << "baro, data_ready = " << _baro_state.data_ready << std::endl;
 
@@ -428,6 +431,9 @@ namespace eskf {
                 if (_range_state.data_ready) {
                     // TODO: 判断机身角度
                     _range_state.offset_nav = _eskf._Rnb * _params.range_pos_body;
+
+                    // TODO: 进行healthy的判断
+                    _range_state.healthy = true;
                 }
 //                std::cout << "range, data_ready = " << _range_state.data_ready << std::endl;
 
@@ -465,7 +471,7 @@ namespace eskf {
 
 //                control_mag_fuse();
                 control_height_fusion();
-//                control_optical_flow_fusion();
+                control_optical_flow_fusion();
                 control_gps_except_hgt_fusion();
 
 //                std::cout << "step 4" << std::endl;
@@ -615,6 +621,10 @@ namespace eskf {
          * 2. 如果垂直位置和速度融合所用的传感器是同源的, 则需要“过去的1秒内出现过clipping”且“eskf的状态处于下降状态”才能认为是垂直加速度异常
          * */
         const bool bad_vert_accel = (are_vertical_pos_and_vel_independent || is_clipping_frequently) && is_inertial_nav_falling;
+//        std::cout << "is_inertial_nav_falling = " << is_inertial_nav_falling << std::endl;
+//        std::cout << "are_vertical_pos_and_vel_independent = " << are_vertical_pos_and_vel_independent << std::endl;
+//        std::cout << "is_clipping_frequently = " << is_clipping_frequently << std::endl;
+//        std::cout << "bad_vert_accel = " << bad_vert_accel << std::endl;
 
         if (bad_vert_accel) {
             _time_bad_vert_accel = _imu_sample_delay.time_us;
@@ -623,12 +633,13 @@ namespace eskf {
         }
 
         // 在最近BADACC_PROBATION(us)时间内, 均没有出现过垂直加速度异常, 才认为垂直加速度正常, 否则是为异常
-        _fault_status.flags.bad_acc_vertical = is_recent(_time_bad_vert_accel, RunnerParameters::BADACC_PROBATION);
-//        if (_fault_status.flags.bad_acc_vertical) {
-//            _fault_status.flags.bad_acc_vertical = is_recent(_time_bad_vert_accel, _params.BADACC_PROBATION);
-//        } else {
-//            _fault_status.flags.bad_acc_vertical = bad_vert_accel;
-//        }
+//        _fault_status.flags.bad_acc_vertical = is_recent(_time_bad_vert_accel, RunnerParameters::BADACC_PROBATION);
+        if (_fault_status.flags.bad_acc_vertical) {
+            _fault_status.flags.bad_acc_vertical = is_recent(_time_bad_vert_accel, RunnerParameters::BADACC_PROBATION);
+        } else {
+            _fault_status.flags.bad_acc_vertical = bad_vert_accel;
+        }
+//        std::cout << "imu_sample_last.time_us = " << _imu_sample_last.time_us << std::endl;
     }
 
     template<uint8_t DELAYS>
@@ -720,13 +731,15 @@ namespace eskf {
                  * */
                 _eskf.set_baro_imu(_eskf._baro_bias - _eskf._state.pos(2));
                 for (uint8_t i = 0; i < N_GPS; ++i) {
+//                    std::cout << _gps_state.hgt_available[i] << std::endl;
                     if (_gps_state.hgt_available[i] && _gps_state.data_ready[i]) {
-                        _eskf.correct_baro_bias(_gps_sample_delay[i].hgt);
+                        _eskf.correct_baro_bias(_gps_state.hgt_imu[i]);
                     }
                 }
                 if (_range_state.available && _range_state.data_ready) {
                     _eskf.calculate_dist_bottom_imu(conservative_range(), _range_offset_nav);
                     _eskf.correct_terrain(-_eskf._state.pos(2));
+                    _terr_state.time_last_fuse = _imu_sample_delay.time_us;
                 }
             } else if (_gps_state.any_hgt_available && _control_status.flags.gps_hgt) {
 //                std::cout << "use gps to fuse terr and bias" << std::endl;
@@ -740,6 +753,7 @@ namespace eskf {
                 if (_range_state.available && _range_state.data_ready) {
                     _eskf.calculate_dist_bottom_imu(conservative_range(), _range_offset_nav);
                     _eskf.correct_terrain(-_eskf._state.pos(2));
+                    _terr_state.time_last_fuse = _imu_sample_delay.time_us;
                 }
             } else if (_range_state.available && (_control_status.flags.rng_hgt || _control_status.flags.ev_hgt)) {
                 /*
@@ -750,7 +764,7 @@ namespace eskf {
                 _eskf.set_dist_bottom_imu(_eskf._terrain - _eskf._state.pos(2));
                 for (uint8_t i = 0; i < N_GPS; ++i) {
                     if (_gps_state.hgt_available[i] && _gps_state.data_ready[i]) {
-                        _eskf.correct_terrain(_gps_sample_delay[i].hgt);
+                        _eskf.correct_terrain(_gps_state.hgt_imu[i]);
                     }
                 }
                 if (_baro_state.available && _baro_state.data_ready) {
@@ -834,8 +848,11 @@ namespace eskf {
          * 否则, 直接使用baro数据进行融合
          */
         auto switch_to_baro_fuse = [&]() {
+//            std::cout << "_control_status.flags.baro_hgt = " << _control_status.flags.baro_hgt << std::endl;
+//            std::cout << "_fault_status.flags.bad_acc_vertical = " << _fault_status.flags.bad_acc_vertical << std::endl;
             if (!_control_status.flags.baro_hgt || _fault_status.flags.bad_acc_vertical) {
                 if (_baro_state.data_ready) {
+//                    std::cout << "reset baro" << std::endl;
                     _control_status.flags.baro_hgt = true;
                     _control_status.flags.gps_hgt = false;
                     _control_status.flags.rng_hgt = false;
@@ -848,6 +865,7 @@ namespace eskf {
                     _time_last_vert_pos_fuse = _imu_sample_delay.time_us;
                 }
             } else if (_baro_state.data_ready){
+//                std::cout << "fuse baro" << std::endl;
                 _time_last_vert_pos_fuse_attempt = _imu_sample_delay.time_us;
 
                 uint8_t info = _eskf.fuse_pos_vert(_eskf._baro_bias - _baro_sample_delay.hgt, _params.baro_pos_body, _baro_offset_nav,
@@ -923,13 +941,16 @@ namespace eskf {
          */
         auto switch_to_preferred_senor_fuse = [&] {
             if (_gps_state.any_rtk_hgt_available) {
-//                std::cout << "switch_to_gps_fuse" << std::endl;
+//                std::cout << "_gps_state.any_rtk_hgt_available: switch_to_gps_fuse" << std::endl;
                 switch_to_gps_fuse();
             } else if (_baro_state.available) {
+//                std::cout << "_baro_state.available: switch_to_baro_fuse" << std::endl;
                 switch_to_baro_fuse();
             } else if (_gps_state.any_hgt_available) {
+//                std::cout << "_gps_state.any_hgt_available: switch_to_gps_fuse" << std::endl;
                 switch_to_gps_fuse();
             } else if (_range_state.available) {
+//                std::cout << "_range_state.available: switch_to_range_fuse" << std::endl;
                 switch_to_range_fuse();
             }
         };
@@ -952,9 +973,7 @@ namespace eskf {
                     }
                     break;
                 case RunnerParameters::HGT_SENSOR_GPS:
-//                    std::cout << "RunnerParameters::HGT_SENSOR_GPS" << std::endl;
-//                    std::cout << "_gps_state.any_rtk_hgt_available = " << _gps_state.any_rtk_hgt_available << std::endl;
-                    if (_gps_state.any_rtk_hgt_available) {
+                    if (_gps_state.any_hgt_available) {
                         switch_to_gps_fuse();
                     } else {
                         switch_to_preferred_senor_fuse();
@@ -1051,6 +1070,7 @@ namespace eskf {
                     && is_delta_time_good) {
                     // 对机体的转动进行补偿
                     _flow_state.flow_compensated_xy_rad = _flow_sample_delay.flow_xy_rad - _flow_sample_delay.gyro_xyz.xy();
+//                    std::cout << _flow_state.flow_compensated_xy_rad(0) << ", " << _flow_state.flow_compensated_xy_rad(1) << std::endl;
                     return true;
                 }
             }
@@ -1068,7 +1088,7 @@ namespace eskf {
             // 如果之前没有开启光流融合模式, 若gps融合误差大于1, 则认为需要光流融合
             const float gps_err_norm_lim = _control_status.flags.opt_flow ? 0.7f : 1.0f;
 
-            // 原则上, 能不使用光流就不使用光流, 在飞机机动较好时, 满足以下条件之一, 才允许光流的使用
+            // 原则上, 能不使用光流就不使用光流, 在飞机机动较好且最近进行过仿地相关融合时, 满足以下条件之一, 才允许光流的使用
             // 1. 飞机处于纯惯导融合
             // 2. 在gps水平融合模式下eskf水平融合误差过大
             // 3. 只有光流能提供水平状态的观测
@@ -1076,15 +1096,18 @@ namespace eskf {
                                           || is_only_active_source_of_horizontal_aiding(_control_status.flags.opt_flow)
                                           || (_control_status.flags.gps_horz && (_gps_horz_error_norm > gps_err_norm_lim));
 
+            bool const is_range_data_used = is_recent(_terr_state.time_last_fuse, (uint64_t)10e6)
+                                            || is_recent(_range_state.time_last_fuse, (uint64_t)10e6);
+
             // 若飞机机动较差, 则需要禁止光流的使用
             if (_control_status.flags.in_air) {
                 const bool flight_condition_not_ok = _control_status.flags.in_air && !is_terrain_estimate_valid();
-                _flow_state.inhibit_flow_use = flight_condition_not_ok || !_control_status.flags.tilt_align || !is_flow_required;
+                _flow_state.inhibit_flow_use = flight_condition_not_ok || !_control_status.flags.tilt_align || !is_flow_required || !is_range_data_used;
             } else {
                 const bool preflight_motion_not_ok = !_control_status.flags.in_air
                                                      && (is_timeout(_flow_state.time_good_motion_us, (uint64_t)1E5)
                                                          || is_recent(_flow_state.time_bad_motion_us, (uint64_t)5E6));
-                _flow_state.inhibit_flow_use = preflight_motion_not_ok || !_control_status.flags.tilt_align || !is_flow_required;
+                _flow_state.inhibit_flow_use = preflight_motion_not_ok || !_control_status.flags.tilt_align || !is_flow_required || !is_range_data_used;
             }
         };
 
@@ -1166,19 +1189,39 @@ namespace eskf {
          */
         auto fuse_opt_flow = [&]() {
             if (_flow_state.inhibit_flow_use) {
+//                std::cout << "inhibit flow use" << std::endl;
                 _control_status.flags.opt_flow = false;
             } else if (_control_status.flags.opt_flow
-                       && is_recent(_flow_state.time_last_fuse, RunnerParameters::FLOW_FUSE_TIMEOUT)
-                       && (is_recent(_terr_state.time_last_fuse, (uint64_t)10e6)
-                           || is_recent(_range_state.time_last_fuse, (uint64_t)10e6))) {
+                       && is_recent(_flow_state.time_last_fuse, RunnerParameters::FLOW_FUSE_TIMEOUT)) {
                 // 只有最近进行过地形融合, 且上一次光流融合时间间隔没超过一定限制, 才能进行光流融合
-                _eskf.fuse_flow(_flow_state.flow_compensated_xy_rad, _params.range_pos_body, _range_offset_nav,
-                                _eskf._params.flow_innov_gate, calc_optical_flow_meas_std(), _flow_fuse_data);
+                Vector2f flow_rate = _flow_state.flow_compensated_xy_rad / _flow_sample_delay.dt;
+                auto info = _eskf.fuse_flow(flow_rate, _params.range_pos_body, _range_offset_nav,
+                                            _eskf._params.flow_innov_gate, calc_optical_flow_meas_std(), _flow_fuse_data);
+                if (info) {
+                    std::cout << "info = " << int(info) << std::endl;
+                    if (info & (uint8_t)0x00000001b) {
+                        _innovation_fault_status.flags.reject_optflow_x |= (uint8_t)0x00000001b;
+                    }
+                    if (info & (uint8_t)0x00000010b) {
+                        _covariance_fault_status.flags.unhealthy_optflow_x |= (uint8_t)0x00000001b;
+                    }
+                    if (info & (uint8_t)0x00000100b) {
+                        _innovation_fault_status.flags.reject_optflow_y |= (uint8_t)0x00000001b;
+                    }
+                    if (info & (uint8_t)0x00001000b) {
+                        _covariance_fault_status.flags.unhealthy_optflow_y |= (uint8_t)0x00000001b;
+                    }
+                } else {
+                    _flow_state.time_last_fuse = _imu_sample_delay.time_us;
+                }
                 _flow_state.last_known_posNE = _eskf._state.pos.xy();
+//                std::cout << "fuse flow" << std::endl;
             } else {
                 _control_status.flags.opt_flow = true;
                 reset_horizontal_velocity_to_optical_flow();
                 reset_horizontal_position_to_optical_flow();
+                _flow_state.time_last_fuse = _imu_sample_delay.time_us;
+//                std::cout << "reset flow" << std::endl;
             }
         };
 

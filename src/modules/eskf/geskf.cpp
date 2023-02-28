@@ -2285,7 +2285,11 @@ namespace eskf {
         return flag;
     }
 
-    uint8_t GESKF::fuse_flow(const Vector2f &flow, const Vector3f &offset_body, const Vector3f &offset_nav, const float &gate, const float &noise_std, FuseData<2> &fuse_data) {
+    uint8_t GESKF::fuse_flow(const Vector2f &flow_rate, const Vector3f &offset_body, const Vector3f &offset_nav, const float &gate, const float &noise_std, FuseData<2> &fuse_data) {
+        std::cout << "fuse_flow: " << std::endl;
+        std::cout << "flow_rate = " << flow_rate(0) << ", " << flow_rate(1) << std::endl;
+        std::cout << "_imu_hgt = " << _imu_hgt << std::endl;
+
         uint8_t flag = 0;
         float HP[DIM];
 
@@ -2311,10 +2315,15 @@ namespace eskf {
         _flow_range = 1.f / range_inv;
 
         // 光流计算得到的速度
-        _flow_vel_body(0) = -flow(1) / range_inv;
-        _flow_vel_body(1) = flow(0) / range_inv;
+        _flow_vel_body(0) = -flow_rate(1) / range_inv;
+        _flow_vel_body(1) = flow_rate(0) / range_inv;
         _flow_vel_nav(0) = _Rnb(0, 0) * _flow_vel_body(0) + _Rnb(0, 1) * _flow_vel_body(1);
         _flow_vel_nav(1) = _Rnb(1, 0) * _flow_vel_body(0) + _Rnb(1, 1) * _flow_vel_body(1);
+        std::cout << "_flow_range = " << _flow_range << std::endl;
+        std::cout << "flow_rate = " << flow_rate(0) << ", " << flow_rate(1) << std::endl;
+        std::cout << "_flow_vel_body = " << _flow_vel_body(0) << ", " << _flow_vel_body(1) << std::endl;
+        std::cout << "vel_body = " << vel_body(0) << "," << vel_body(1) << std::endl;
+        std::cout << "_flow_vel_nav = " << _flow_vel_nav(0) << ", " << _flow_vel_nav(1) << std::endl;
 
         float Hz = vel_body(1) * range_inv / _flow_hgt;
         float Hvx = _Rnb(0, 1) * range_inv;
@@ -2331,6 +2340,15 @@ namespace eskf {
         float Hdelta_ang_bias_y = 0.f;
         float Hdelta_ang_bias_z = -offset_body(0) * range_inv / _dt;
 
+//        HP[0] = 0.f;
+//        HP[1] = 0.f;
+//        HP[2] = 0.f;
+//        HP[6] = 0.f;
+//        HP[7] = 0.f;
+//        HP[8] = 0.f;
+//        HP[9] = 0.f;
+//        HP[10] = 0.f;
+//        HP[11] = 0.f;
         HP[0] = _P[0][2] * Hz + _P[0][3] * Hvx + _P[0][4] * Hvy + _P[0][5] * Hvz + _P[0][6] * Hax + _P[0][7] * Hay + _P[0][8] * Haz + _P[0][9] * Hdelta_ang_bias_x + _P[0][11] * Hdelta_ang_bias_z;
         HP[1] = _P[1][2] * Hz + _P[1][3] * Hvx + _P[1][4] * Hvy + _P[1][5] * Hvz + _P[1][6] * Hax + _P[1][7] * Hay + _P[1][8] * Haz + _P[1][9] * Hdelta_ang_bias_x + _P[1][11] * Hdelta_ang_bias_z;
         HP[2] = _P[2][2] * Hz + _P[2][3] * Hvx + _P[2][4] * Hvy + _P[2][5] * Hvz + _P[2][6] * Hax + _P[2][7] * Hay + _P[2][8] * Haz + _P[2][9] * Hdelta_ang_bias_x + _P[2][11] * Hdelta_ang_bias_z;
@@ -2403,7 +2421,7 @@ namespace eskf {
         // H * P * H' + R
         fuse_data.innov_var(0) = HP[2] * Hz + HP[3] * Hvx + HP[4] * Hvy + HP[5] * Hvz + HP[6] * Hax + HP[7] * Hay + HP[8] * Haz + HP[9]*Hdelta_ang_bias_x + HP[11]*Hdelta_ang_bias_z + sq(noise_std);
 
-        fuse_data.innov(0) = flow(0) - vel_body(1) * range_inv;
+        fuse_data.innov(0) = flow_rate(0) - vel_body(1) * range_inv;
 
         fuse_data.test_ratio(0) = sq(fuse_data.innov(0) / gate) / fuse_data.innov_var(0);
         if (fuse_data.test_ratio(0) > 1.f) {
@@ -2427,8 +2445,17 @@ namespace eskf {
         Haz = -(_Rnb(0, 0) * _state.vel(1) - _Rnb(1, 0) * _state.vel(0)) * range_inv;
         Hdelta_ang_bias_x = 0.f;
         Hdelta_ang_bias_y = (1.f + offset_body(2) * range_inv) / _dt;
-        Hdelta_ang_bias_z = -offset_body(0) * range_inv / _dt;
+        Hdelta_ang_bias_z = -offset_body(1) * range_inv / _dt;
 
+//        HP[0] = 0.f;
+//        HP[1] = 0.f;
+//        HP[2] = 0.f;
+//        HP[6] = 0.f;
+//        HP[7] = 0.f;
+//        HP[8] = 0.f;
+//        HP[9] = 0.f;
+//        HP[10] = 0.f;
+//        HP[11] = 0.f;
         HP[0] = _P[0][2] * Hz + _P[0][3] * Hvx + _P[0][4] * Hvy + _P[0][5] * Hvz + _P[0][6] * Hax + _P[0][7] * Hay + _P[0][8] * Haz + _P[0][10] * Hdelta_ang_bias_y + _P[0][11] * Hdelta_ang_bias_z;
         HP[1] = _P[1][2] * Hz + _P[1][3] * Hvx + _P[1][4] * Hvy + _P[1][5] * Hvz + _P[1][6] * Hax + _P[1][7] * Hay + _P[1][8] * Haz + _P[1][10] * Hdelta_ang_bias_y + _P[1][11] * Hdelta_ang_bias_z;
         HP[2] = _P[2][2] * Hz + _P[2][3] * Hvx + _P[2][4] * Hvy + _P[2][5] * Hvz + _P[2][6] * Hax + _P[2][7] * Hay + _P[2][8] * Haz + _P[2][10] * Hdelta_ang_bias_y + _P[2][11] * Hdelta_ang_bias_z;
@@ -2501,7 +2528,7 @@ namespace eskf {
         // H * P * H' + R
         fuse_data.innov_var(1) = HP[2] * Hz + HP[3] * Hvx + HP[4] * Hvy + HP[5] * Hvz + HP[6] * Hax + HP[7] * Hay + HP[8] * Haz + HP[10]*Hdelta_ang_bias_y + HP[11]*Hdelta_ang_bias_z + sq(noise_std);
 
-        fuse_data.innov(1) = flow(1) + vel_body(0) * range_inv;
+        fuse_data.innov(1) = flow_rate(1) + vel_body(0) * range_inv;
 
         fuse_data.test_ratio(1) = sq(fuse_data.innov(1) / gate) / fuse_data.innov_var(1);
         if (fuse_data.test_ratio(1) > 1.f) {
@@ -2513,6 +2540,8 @@ namespace eskf {
         }
 
         regular_covariance_to_symmetric<DIM>(0);
+
+        std::cout << "fuse_data.innov = " << fuse_data.innov(0) << ", " << fuse_data.innov(1) << std::endl;
 
         return flag;
     }

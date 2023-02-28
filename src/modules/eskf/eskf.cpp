@@ -5,6 +5,7 @@
 #include "eskf.h"
 #include <cfloat>
 #include <cstring>
+//#include <iostream>
 
 namespace eskf {
     void ESKF::initialize() {
@@ -120,7 +121,7 @@ namespace eskf {
         _state.wind *= math::constrain(1.f - _dt * _params.wind_tau_inv, 0.f, 1.f);
 
         // IMU距离地面的高度
-        _imu_hgt = -_state.pos(2) - _terrain;
+        _imu_hgt = -(_state.pos(2) - _terrain);
     }
 
     bool ESKF::posterior_estimate(const float (&HP)[DIM], const float &innov_var, const float &innov) {
