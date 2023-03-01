@@ -47,8 +47,8 @@ namespace eskf {
 //        float wind_tau_inv {0.0f};          ///< 风速的时间常数
 
         // 过程噪声
-        float pos_proc_noise {1e-5f};   ///< 位置过程噪声 (m/s)
-        float vel_proc_noise {1e-6f};   ///< 速度过程噪声 (m/s^2)
+        float pos_proc_noise {1e-7f};   ///< 位置过程噪声 (m/s)
+        float vel_proc_noise {1e-7f};   ///< 速度过程噪声 (m/s^2)
         float ang_axis_proc_noise {1e-7f};  ///< 轴角过程噪声 (rad/s)
         float gyro_bias_proc_noise {1.0e-3f};   ///< 角速度偏移过程噪声 (rad/s^2)
         float acc_bias_proc_noise {1.0e-2f};    ///< 加速度偏移过程噪声 (m/s^3)
@@ -126,15 +126,15 @@ namespace eskf {
         float var_mag_ang_max {1.f};            ///< 磁场角度的最大方差
         float var_mag_bias_max {1.f};           ///< 磁力计偏移的最大方差
         float var_wind_max {1.f};               ///< 风速的最大方差
-        float var_pos_min {1e-6f};              ///< 位置的最小方差
+        float var_pos_min {1e-12f};              ///< 位置的最小方差
         float var_vel_min {1e-6f};              ///< 速度的最小方差
         float var_angle_min {1e-6f};            ///< 轴角的最小方差
-        float var_gyro_bias_min {1e-6f};        ///< 陀螺仪偏移的最小方差
-        float var_acc_bias_min {1e-6f};         ///< 加速度计偏移的最小方差
-        float var_grav_min {1.f};               ///< 重力加速度的最小方差
-        float var_mag_norm_min {1e-6f};         ///< 磁场强度的最小方差
-        float var_mag_ang_min {1e-6f};          ///< 磁场角度的最小方差
-        float var_mag_bias_min {1e-6f};         ///< 磁力计偏移的最小方差
+        float var_gyro_bias_min {1e-12f};        ///< 陀螺仪偏移的最小方差
+        float var_acc_bias_min {1e-12f};         ///< 加速度计偏移的最小方差
+        float var_grav_min {1e-12f};               ///< 重力加速度的最小方差
+        float var_mag_norm_min {1e-12f};         ///< 磁场强度的最小方差
+        float var_mag_ang_min {1e-12f};          ///< 磁场角度的最小方差
+        float var_mag_bias_min {1e-12f};         ///< 磁力计偏移的最小方差
         float var_wind_min {1e-6f};             ///< 风速的最小方差
 
         /* 气压计偏移融合参数 */
@@ -240,6 +240,23 @@ namespace eskf {
 
     struct BaseSample {
         uint64_t time_us{0};	///< 量测时间 (us)
+    };
+
+    struct GpsMessage : BaseSample {
+        int32_t lat;		///< Latitude in 1E-7 degrees
+        int32_t lon;		///< Longitude in 1E-7 degrees
+        int32_t alt;		///< Altitude in 1E-3 meters (millimeters) above MSL
+        float yaw;		///< yaw angle. NaN if not set (used for dual antenna GPS), (rad, [-PI, PI])
+        float yaw_offset;	///< Heading/Yaw offset for dual antenna GPS - refer to description for GPS_YAW_OFFSET
+        uint8_t fix_type;	///< 0-1: no fix, 2: 2D fix, 3: 3D fix, 4: RTCM code differential, 5: Real-Time Kinematic
+        float eph;		///< GPS horizontal position accuracy in m
+        float epv;		///< GPS vertical position accuracy in m
+        float sacc;		///< GPS speed accuracy in m/s
+        float vel_m_s;		///< GPS ground speed (m/sec)
+        Vector3f vel_ned;	///< GPS ground speed NED
+        bool vel_ned_valid;	///< GPS ground speed is valid
+        uint8_t nsats;		///< number of satellites used
+        float pdop;		///< position dilution of precision
     };
 
     struct OutputSample : BaseSample {

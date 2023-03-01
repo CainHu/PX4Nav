@@ -322,7 +322,7 @@ namespace eskf {
             constrain_max(i_ang, _params.var_angle_max);
             constrain_max(i_gyro_bias, var_delta_ang_bias_max);
             constrain_max(i_acc_bias, var_delta_vel_bias_max);
-            constrain_max(i_mag_bias, _params.var_mag_bias_min);
+            constrain_max(i_mag_bias, _params.var_mag_bias_max);
         }
 
         // δg, δmag_norm
@@ -341,7 +341,7 @@ namespace eskf {
             _P[i][i] = math::max(_P[i][i], _params.var_mag_ang_min);
             _P[i_wind][i_wind] = math::max(_P[i_wind][i_wind], _params.var_wind_min);
 
-            constrain_max(i, _params.var_mag_norm_max);
+            constrain_max(i, _params.var_mag_ang_max);
             constrain_max(i_wind, _params.var_wind_max);
         }
 

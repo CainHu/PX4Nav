@@ -166,16 +166,16 @@ namespace eskf {
          * 重置过程噪声协方差矩阵(忽略了陀螺仪和加速度计的噪声)
          */
         void reset_process_variances() {
-            _Q[0] = _Q[1] = _Q[2] = _params.pos_proc_noise * _params.pos_proc_noise;
-            _Q[3] = _Q[4] = _Q[5] = _params.vel_proc_noise * _params.vel_proc_noise;
-            _Q[6] = _Q[7] = _Q[8] = _params.ang_axis_proc_noise * _params.ang_axis_proc_noise;
-            _Q[9] = _params.grav_proc_noise * _params.grav_proc_noise;
-            _Q[10] = _Q[11] = _Q[12] = _params.ang_axis_proc_noise * _params.ang_axis_proc_noise * _dt2;
-            _Q[13] = _Q[14] = _Q[15] = _params.acc_bias_proc_noise * _params.acc_bias_proc_noise * _dt2;
-            _Q[16] = _params.mag_norm_proc_noise * _params.mag_norm_proc_noise;
-            _Q[17] = _Q[18] = _params.mag_ang_proc_noise * _params.mag_ang_proc_noise;
-            _Q[19] = _Q[20] = _Q[21] = _params.mag_bias_proc_noise * _params.mag_bias_proc_noise;
-            _Q[22] = _Q[23] = _params.wind_proc_noise * _params.wind_proc_noise;
+            _Q[0] = _Q[1] = _Q[2] = sq(_params.pos_proc_noise);
+            _Q[3] = _Q[4] = _Q[5] = sq(_params.vel_proc_noise) + sq(_params.acc_noise);
+            _Q[6] = _Q[7] = _Q[8] = sq(_params.ang_axis_proc_noise) + sq(_params.gyro_noise);
+            _Q[9] = _Q[10] = _Q[11] = sq(_params.gyro_bias_proc_noise * _dt);
+            _Q[12] = _Q[13] = _Q[14] = sq(_params.acc_bias_proc_noise * _dt);
+            _Q[15] = sq(_params.grav_proc_noise);
+            _Q[16] = sq(_params.mag_norm_proc_noise);
+            _Q[17] = _Q[18] = sq(_params.mag_ang_proc_noise);
+            _Q[19] = _Q[20] = _Q[21] = sq(_params.mag_bias_proc_noise);
+            _Q[22] = _Q[23] = sq(_params.wind_proc_noise);
         }
 
         /*!
@@ -409,6 +409,7 @@ namespace eskf {
         float get_dt() const { return _dt; };
         const ErrorState &get_error_state() const { return _error_state; };
         const float (*get_covariance_matrix() const)[DIM] { return _P; };
+        const float *get_proc_noise_matrix() const { return _Q; }
         float get_terrain() const { return _terrain; };
         float get_imu_hgt() const { return _imu_hgt; };
         const Vector3f &get_delta_ang_corr() const { return _delta_ang_corr; };

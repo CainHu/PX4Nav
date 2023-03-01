@@ -216,8 +216,8 @@ namespace eskf {
          * R * diag(nx*nx, ny*ny, nz*nz) * R'
          * 如果acc达到了限幅, 则需要增大该量测噪声
          * */
-        float bad_var = sq(_params.acc_noise) * _dt2;
-        float good_var = sq(_params.acc_bad_noise) * _dt2;
+        float bad_var = sq(_params.acc_bad_noise * _dt);
+        float good_var = sq(_params.acc_noise * _dt);
         Vector3f var_delta_vel;
         var_delta_vel(0) = imu_sample.delta_vel_clipping[0] ? bad_var : good_var;
         var_delta_vel(1) = imu_sample.delta_vel_clipping[1] ? bad_var : good_var;
@@ -234,6 +234,8 @@ namespace eskf {
         float r00_sx_r10_plus_r01_sy_r11_plus_r02_sz_r12 = r00_sx * mR10 + r01_sy * mR11 + r02_sz * mR12;
         float r00_sx_r20_plus_r01_sy_r21_plus_r02_sz_r22 = r00_sx * mR20 + r01_sy * mR21 + r02_sz * mR22;
         float r10_r20_sx_plus_r11_r21_sy_plus_r12_r22_sz = r10_sx * mR20 + r11_sy * mR21 + r12_sz * mR22;
+//        std::cout << "_P[3][3] = " << _P[3][3] << std::endl;
+//        std::cout << "mR00 * r00_sx + mR01 * r01_sy + mR02 * r02_sz = " << mR00 * r00_sx + mR01 * r01_sy + mR02 * r02_sz << std::endl;
         _P[3][3] = kahan_summation(_P[3][3], mR00 * r00_sx + mR01 * r01_sy + mR02 * r02_sz, _accumulator[3]);
         _P[3][4] += r00_sx_r10_plus_r01_sy_r11_plus_r02_sz_r12;
         _P[3][5] += r00_sx_r20_plus_r01_sy_r21_plus_r02_sz_r22;
@@ -245,8 +247,8 @@ namespace eskf {
          * R * diag(nx*nx, ny*ny, nz*nz) * R'
          * 如果gyro达到了限幅, 则需要增大该量测噪声
          * */
-        bad_var = _params.gyro_bad_noise * _params.gyro_bad_noise * _dt2;
-        good_var = _params.gyro_noise * _params.gyro_noise * _dt2;
+        bad_var = sq(_params.gyro_bad_noise * _dt);
+        good_var = sq(_params.gyro_noise * _dt);
         Vector3f var_delta_ang;
         var_delta_ang(0) = imu_sample.delta_ang_clipping[0] ? bad_var : good_var;
         var_delta_ang(1) = imu_sample.delta_ang_clipping[1] ? bad_var : good_var;
@@ -271,16 +273,16 @@ namespace eskf {
         _P[8][8] = kahan_summation(_P[8][8], mR20 * mR20 * sx + mR21 * mR21 * sy + mR22 * mR22 * sz, _accumulator[8]);
 
         // F * P * F' + Q
-        float proc_var_pos = sq(_params.pos_proc_noise) * _dt2;
-        float proc_var_vel = sq(_params.vel_proc_noise) * _dt2;
-        float proc_var_ang = sq(_params.ang_axis_proc_noise) * _dt2;
-        float proc_var_delta_ang = sq(_params.gyro_bias_proc_noise) * _dt4;
-        float proc_var_delta_vel = sq(_params.acc_bias_proc_noise) * _dt4;
+        float proc_var_pos = sq(_params.pos_proc_noise * _dt);
+        float proc_var_vel = sq(_params.vel_proc_noise * _dt);
+        float proc_var_ang = sq(_params.ang_axis_proc_noise * _dt);
+        float proc_var_delta_ang = sq(_params.gyro_bias_proc_noise * _dt2);
+        float proc_var_delta_vel = sq(_params.acc_bias_proc_noise * _dt2);
         for (uint8_t i = 0; i < 3; ++i) {
             _P[i][i] = kahan_summation(_P[i][i], proc_var_pos, _accumulator[i]);
-            _P[i + 3][i + 3] = kahan_summation(_P[i + 3][i + 3], proc_var_pos, _accumulator[i + 3]);
-            _P[i + 6][i + 6] = kahan_summation(_P[i + 6][i + 6], proc_var_pos, _accumulator[i + 6]);
-            _P[i + 9][i + 9] = kahan_summation(_P[i + 9][i + 9], proc_var_pos, _accumulator[i + 9]);
+            _P[i + 3][i + 3] = kahan_summation(_P[i + 3][i + 3], proc_var_vel, _accumulator[i + 3]);
+            _P[i + 6][i + 6] = kahan_summation(_P[i + 6][i + 6], proc_var_ang, _accumulator[i + 6]);
+            _P[i + 9][i + 9] = kahan_summation(_P[i + 9][i + 9], proc_var_delta_ang, _accumulator[i + 9]);
         }
 
         if (_control_status.flags.acc_x_bias) {
