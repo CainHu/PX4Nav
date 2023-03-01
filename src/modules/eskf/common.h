@@ -5,6 +5,17 @@
 
 #define NUM_GPS 2
 
+// GPS pre-flight check bit locations
+#define MASK_GPS_NSATS  (1<<0)
+#define MASK_GPS_PDOP   (1<<1)
+#define MASK_GPS_HACC   (1<<2)
+#define MASK_GPS_VACC   (1<<3)
+#define MASK_GPS_SACC   (1<<4)
+#define MASK_GPS_HDRIFT (1<<5)
+#define MASK_GPS_VDRIFT (1<<6)
+#define MASK_GPS_HSPD   (1<<7)
+#define MASK_GPS_VSPD   (1<<8)
+
 namespace eskf {
     using matrix::AxisAnglef;
     using matrix::Dcmf;
@@ -181,6 +192,8 @@ namespace eskf {
         static constexpr uint64_t FLOW_FUSE_TIMEOUT {7000000};
         static constexpr uint64_t HORZ_FUSE_TIMEOUT {7000000};
 
+        static constexpr uint64_t MIN_GPS_HEALTH {10000000};
+
         /* 传感器延迟(ms) */
         float gps_delay_ms {0.f};
         float ev_delay_ms {0.f};
@@ -220,6 +233,16 @@ namespace eskf {
         float flow_noise_qual_min{0.5f};
         float flow_max_rate {2.f * M_PI};
         int32_t flow_qual_min{1};
+
+        /* GPS */
+        int32_t gps_check_mask{21};		///< bitmask used to control which GPS quality checks are used
+        float req_hacc{5.0f};			///< maximum acceptable horizontal position error (m)
+        float req_vacc{8.0f};			///< maximum acceptable vertical position error (m)
+        float req_sacc{1.0f};			///< maximum acceptable speed error (m/s)
+        int32_t req_nsats{6};			///< minimum acceptable satellite count
+        float req_pdop{2.0f};			///< maximum acceptable position dilution of precision
+        float req_hdrift{0.3f};			///< maximum acceptable horizontal drift speed (m/s)
+        float req_vdrift{0.5f};			///< maximum acceptable vertical drift speed (m/s)
 
         float acc_bias_lim{0.4f};		///< maximum accel bias magnitude (m/sec**2)
         float acc_bias_inhibit_acc_lim_max{25.0f};	///< learning is disabled if the magnitude of the IMU acceleration vector is greater than this (m/sec**2)
@@ -472,7 +495,7 @@ namespace eskf {
             uint16_t hspeed : 1; ///< 8 - true if horizontal speed is excessive (can only be used when stationary on ground)
             uint16_t vspeed : 1; ///< 9 - true if vertical speed error is excessive
         } flags;
-        uint32_t value;
+        uint16_t value;
     };
 
 // bitmask containing filter control status
