@@ -33,7 +33,7 @@ namespace eskf {
         bool collect_gps(const GpsMessage &gps, uint8_t n);
 
         void set_imu_data(const ImuSample &imu_sample);
-        void set_gps_data(const GpsSample &gps_sample, uint8_t i);
+        void set_gps_data(const GpsMessage &gps_message, uint8_t i);
         void set_magnet_data(const MagSample &mag_sample);
         void set_baro_date(const BaroSample &baro_sample);
         void set_range_data(const RangeSample &range_sample);
@@ -199,11 +199,6 @@ namespace eskf {
         bool _is_manoeuvre_level_high;
         bool _is_manoeuvre_level_low;
 
-        // TODO: 临时
-    public:
-        bool _NED_origin_initialised {false};
-    private:
-
         // TODO: gps数据的精度
         float _gps_horz_error_norm {10.f};
 
@@ -280,14 +275,16 @@ namespace eskf {
         bool _mag_align_req {false};
 
         struct GpsState {
+            bool ned_origin_initialised {false};
+            bool any_hgt_available {false};
+            bool any_rtk_hgt_available {false};
+
             bool checks_passed[N_GPS] {false};
             bool intermittent[N_GPS] {true};
             bool data_ready[N_GPS] {false};
             bool hgt_available[N_GPS] {false};
             bool rtk_hgt_available[N_GPS] {false};
             bool speed_valid[N_GPS]{false};
-            bool any_hgt_available {false};
-            bool any_rtk_hgt_available {false};
 
             uint64_t time_last_hgt_fuse[N_GPS] {};
             uint64_t last_fail_us[N_GPS] {};
@@ -305,21 +302,21 @@ namespace eskf {
             float origin_unc_pos_horz {0.f}; // horizontal position uncertainty of the GPS origin
             float origin_unc_pos_vert {0.f}; // vertical position uncertainty of the GPS origin
             MapProjection pos_ref{}; // Contains WGS-84 position latitude and longitude of the ESKF origin
-            float alf_ref {0.f};
+            float alt_ref {0.f};
             float yaw_offset{0.0f};	// Yaw offset angle for dual GPS antennas used for yaw estimation (radians).
 
             MapProjection pos_prev[N_GPS]{}; // Contains WGS-84 position latitude and longitude of the previous GPS message
             float alt_prev[N_GPS]{0.0f};	// height from the previous GPS message (m)
 
-            float earth_rate_ned = 0.f;
+            Vector3f earth_rate_ned {};
 
-            float mag_declination[N_GPS] {NAN};
-            float mag_inclination[N_GPS] {NAN};
-            float mag_strength[N_GPS] {NAN};
+            float mag_declination {NAN};
+            float mag_inclination {NAN};
+            float mag_strength {NAN};
 
-            float pos_horz_error_norm[N_GPS] {1.f};
-            float pos_vert_error_norm[N_GPS] {1.f};
-            float vel_error_norm[N_GPS] {1.f};
+            float pos_horz_error_quality[N_GPS] {1.f};
+            float pos_vert_error_quality[N_GPS] {1.f};
+            float vel_error_quality[N_GPS] {1.f};
 
             Vector3f pos_deriv_filt[N_GPS] {};
             float pos_horz_deriv_filt_norm[N_GPS] {};
@@ -327,6 +324,8 @@ namespace eskf {
 
             Vector2f vel_horz_filt[N_GPS] {};
             float vel_horz_filt_norm[N_GPS] {};
+
+            float vel_vert_diff_filt[N_GPS] {};
 
             gps_check_fail_status_u check_fail_status[N_GPS] {0};
         } _gps_state;
@@ -439,6 +438,8 @@ namespace eskf {
                         _gps_state.pos_horz_imu[i] = _gps_sample_delay[i].pos_horz - _gps_state.offset_nav[i].xy();
                         _gps_state.hgt_imu[i] = _gps_sample_delay[i].hgt + _gps_state.offset_nav[i](2);
                         _gps_state.vel_imu[i] = _gps_sample_delay[i].vel - _gps_state.w_cross_offset_nav[i];
+
+//                        std::cout << _gps_sample_delay[i].pos_horz(0) << ", " << _gps_sample_delay[i].pos_horz(1) << ", " << _gps_sample_delay[i].hgt << std::endl;
 
                         _gps_state.checks_passed[i] = _gps_sample_delay[i].fix_type >= 3;
                     } else {
@@ -842,7 +843,7 @@ namespace eskf {
                     _control_status.flags.rng_hgt = false;
                     _control_status.flags.ev_hgt = false;
 
-                    _eskf.set_pos_vert(-sum_gps_hgt_imu / sum_prior);
+                    _eskf.set_pos_vert(_gps_state.alt_ref - sum_gps_hgt_imu / sum_prior);
                     _eskf.reset_covariance_matrix<1>(2, sq(_eskf._params.gps_pos_vert_noise));
 
                     _time_last_vert_pos_fuse_attempt = _imu_sample_delay.time_us;
@@ -857,7 +858,7 @@ namespace eskf {
                         _time_last_vert_pos_fuse_attempt = _imu_sample_delay.time_us;
 
                         // TODO: 使用_gps_sample_delay中的精度因子替换_eskf._params.gps_pos_vert_noise, 并且noise根据rtk改变
-                        uint8_t info = _eskf.fuse_pos_vert(-_gps_sample_delay[i].hgt, _params.gps_pos_body[i], _gps_offset_nav[i],
+                        uint8_t info = _eskf.fuse_pos_vert(_gps_state.alt_ref - _gps_sample_delay[i].hgt, _params.gps_pos_body[i], _gps_offset_nav[i],
                                                            _eskf._params.gps_pos_vert_innov_gate, _eskf._params.gps_pos_vert_noise, _gps_pos_vert_fuse_data[i]);
 
                         if (info) {
@@ -1366,7 +1367,7 @@ namespace eskf {
 
         auto strict_condition = [&](uint8_t i) -> bool {
             // gps在连续5秒内卫星数都合格
-            return is_timeout(_gps_state.last_fail_us[i], (uint64_t)5e6);
+            return is_timeout(_gps_state.last_fail_us[i], (uint64_t)1e6);
         };
 
         auto reset_gps_fusion = [&](const std::function<bool(uint8_t)>& condition) -> bool {
@@ -1389,13 +1390,18 @@ namespace eskf {
 
                 _eskf.set_pos_horz(sum_pos);
                 // TODO: 使用gps的精度代替 _eskf._params.gps_pos_horz_noise
-                _eskf.reset_covariance_matrix<2>(0, _eskf._params.gps_pos_horz_noise);
+                _eskf.reset_covariance_matrix<2>(0, sq(_eskf._params.gps_pos_horz_noise));
 
                 _eskf.set_velocity(sum_vel);
                 // TODO: 使用gps的精度代替 _eskf._params.gps_vel_horz_noise 和 _eskf._params.gps_vel_vert_noise
-                _eskf.reset_covariance_matrix<3>(3, math::max(_eskf._params.gps_vel_horz_noise, _eskf._params.gps_vel_vert_noise));
+                _eskf.reset_covariance_matrix<3>(3, sq(math::max(_eskf._params.gps_vel_horz_noise, _eskf._params.gps_vel_vert_noise)));
 
                 _time_last_horz_pos_fuse = _time_last_horz_vel_fuse = _time_last_vert_vel_fuse = _imu_sample_last.time_us;
+
+//                std::cout << "SSSSSSSSSSSSSSSSSSSSSSSSSSSSSsum_pos: " << sum_pos(0) << ", " << sum_pos(1) << std::endl;
+//                std::cout << "SSSSSSSSSSSSSSSSSSSSSSSSSSSSSsum_vel" << sum_vel(0) << ", " << sum_vel(1) << ", " << sum_vel(2) << std::endl;
+
+//                assert(-1 > 0);
 
                 return true;
             }
@@ -1417,7 +1423,7 @@ namespace eskf {
         bool each_gps_checks_failing = true;
         const bool mandatory_conditions_passing = _control_status.flags.tilt_align
                                                   && _control_status.flags.yaw_align
-                                                  && _NED_origin_initialised;
+                                                  && _gps_state.ned_origin_initialised;
 
 //        std::cout << "mandatory_conditions_passing = " << mandatory_conditions_passing << std::endl;
 
@@ -2127,18 +2133,53 @@ namespace eskf {
     }
 
     template<uint8_t DELAYS>
-    void ESKFRunner<DELAYS>::set_gps_data(const GpsSample &gps_sample, uint8_t i) {
+    void ESKFRunner<DELAYS>::set_gps_data(const GpsMessage &gps, uint8_t i) {
         if (_imu_buffer.is_empty()) {   // imu_buffer没数据, 则不存储数据
             return;
         }
 
+        auto push_gps_data_to_buffer = [&]() {
+            GpsSample gps_sample;
+
+            gps_sample.time_us = gps.time_us;
+
+            gps_sample.vel = gps.vel_ned;
+
+            _gps_state.speed_valid[i] = gps.vel_ned_valid;
+            gps_sample.sacc = gps.sacc;
+            gps_sample.hacc = gps.eph;
+            gps_sample.vacc = gps.epv;
+
+            gps_sample.hgt = (float)gps.alt * 1e-3f;
+
+            gps_sample.yaw = gps.yaw;
+
+            gps_sample.fix_type = gps.fix_type;		// 保存fix_type
+
+            if (PX4_ISFINITE(gps.yaw_offset)) {
+                _gps_state.yaw_offset = gps.yaw_offset;
+
+            } else {
+                _gps_state.yaw_offset = 0.0f;
+            }
+
+            if (collect_gps(gps, i)) {
+                gps_sample.pos_horz = _gps_state.pos_ref.project((gps.lat / 1.0e7), (gps.lon / 1.0e7));
+//                std::cout << gps_sample.pos_horz(0) << ", " << gps_sample.pos_horz(1) << ", " << gps_sample.hgt << std::endl;
+            } else {
+                gps_sample.pos_horz = {0.f, 0.f};
+            }
+
+            _gps_buffer[i].push(gps_sample);
+        };
+
 //        std::cout << "set_gps_time = " << gps_sample.time_us << std::endl;
         if (_gps_buffer[i].is_empty()) {
-            _gps_buffer[i].push(gps_sample);
+            push_gps_data_to_buffer();
         } else {
             // 限制gps_buffer记录数据的采样率, 使其采样率一定低于imu_buffer内的imu数据的平均时间
-            if (gps_sample.time_us - _gps_buffer[i].newest().time_us > _min_obs_interval_us) {
-                _gps_buffer[i].push(gps_sample);
+            if (gps.time_us - _gps_buffer[i].newest().time_us > _min_obs_interval_us) {
+                push_gps_data_to_buffer();
             } else {
                 return;
             }
@@ -2268,81 +2309,77 @@ namespace eskf {
             _gps_state.pos_horz_deriv_filt_norm[n] = NAN;
             _gps_state.pos_vert_deriv_filt_norm[n] = NAN;
             _gps_state.vel_horz_filt_norm[n] = NAN;
-        }
+        };
 
         auto gps_is_good = [&]() -> bool {
-            // Check the fix type
-            _gps_state.check_fail_status[n].flag.fix = (gps.fix_type < 3);
+            // 3D及以上才能认为check通过
+            _gps_state.check_fail_status[n].flags.fix = (gps.fix_type < 3);
 
-            // Check the number of satellites
+            // 检查卫星数
             _gps_state.check_fail_status[n].flags.nsats = (gps.nsats < _params.req_nsats);
 
-            // Check the position dilution of precision
+            // 位置的精度因子
             _gps_state.check_fail_status[n].flags.pdop = (gps.pdop > _params.req_pdop);
 
-            // Check the reported horizontal and vertical position accuracy
+            // 水平位置误差与垂直位置误差
             _gps_state.check_fail_status[n].flags.hacc = (gps.eph > _params.req_hacc);
             _gps_state.check_fail_status[n].flags.vacc = (gps.epv > _params.req_vacc);
 
-            // Check the reported speed accuracy
+            // 速度误差
             _gps_state.check_fail_status[n].flags.sacc = (gps.sacc > _params.req_sacc);
 
-            // check if GPS quality is degraded
-            _gps_state.pos_horz_error_norm[n] = gps.eph / _params.req_hacc;
-            _gps_state.pos_vert_error_norm[n] = gps.epv / _params.req_vacc;
-            _gps_state.vel_error_norm[n] = gps.sacc / _params.req_sacc;
+            // 计算位置与速度的误差质量
+            _gps_state.pos_horz_error_quality[n] = gps.eph / _params.req_hacc;
+            _gps_state.pos_vert_error_quality[n] = gps.epv / _params.req_vacc;
+            _gps_state.vel_error_quality[n] = gps.sacc / _params.req_sacc;
 
-            // Calculate time lapsed since last update, limit to prevent numerical errors and calculate a lowpass filter coefficient
+            // 一阶低通滤波器的前向欧拉实现
             constexpr float filt_time_const = 10.0f;
             const float dt = math::constrain(float(int64_t(_imu_sample_last.time_us) - int64_t(_gps_state.pos_prev[n].getProjectionReferenceTimestamp())) * 1e-6f, 0.001f, filt_time_const);
             const float filter_coef = dt / filt_time_const;
 
-            // The following checks are only valid when the vehicle is at rest
+            // 一下检查只有在静止时才生效
             const double lat = gps.lat * 1.0e-7;
             const double lon = gps.lon * 1.0e-7;
-
             if (!_control_status.flags.in_air && _control_status.flags.vehicle_at_rest) {
-                // Calculate position movement since last measurement
+                // 计算相对于上一次位置的位移
                 float delta_pos_n = 0.0f;
                 float delta_pos_e = 0.0f;
-
-                // calculate position movement since last GPS fix
                 if (_gps_state.pos_prev[n].getProjectionReferenceTimestamp() > 0) {
                     _gps_state.pos_prev[n].project(lat, lon, delta_pos_n, delta_pos_e);
 
                 } else {
-                    // no previous position has been set
+                    // 初始化
                     _gps_state.pos_prev[n].initReference(lat, lon, _imu_sample_last.time_us);
                     _gps_state.alt_prev[n] = 1e-3f * (float)gps.alt;
                 }
 
-                // Calculate the horizontal and vertical drift velocity components and limit to 10x the threshold
+                // 计算位置的变化率, 并限制其大小
                 const Vector3f vel_limit(_params.req_hdrift, _params.req_hdrift, _params.req_vdrift);
                 Vector3f pos_derived(delta_pos_n, delta_pos_e, (_gps_state.alt_prev[n] - 1e-3f * (float)gps.alt));
                 pos_derived = matrix::constrain(pos_derived / dt, -10.0f * vel_limit, 10.0f * vel_limit);
 
-                // Apply a low pass filter
+                // 进行低通滤波
                 _gps_state.pos_deriv_filt[n] = pos_derived * filter_coef + _gps_state.pos_deriv_filt[n] * (1.0f - filter_coef);
 
-                // Calculate the horizontal drift speed and fail if too high
+                // 检查水平位置的变化率是否过高
                 _gps_state.pos_horz_deriv_filt_norm[n] = Vector2f(_gps_state.pos_deriv_filt[n].xy()).norm();
                 _gps_state.check_fail_status[n].flags.hdrift = (_gps_state.pos_horz_deriv_filt_norm[n] > _params.req_hdrift);
 
-                // Fail if the vertical drift speed is too high
+                // 检查垂直位置的变化率是否过高
                 _gps_state.pos_vert_deriv_filt_norm[n] = fabsf(_gps_state.pos_deriv_filt[n](2));
                 _gps_state.check_fail_status[n].flags.vdrift = (_gps_state.pos_vert_deriv_filt_norm[n] > _params.req_vdrift);
 
-                // Check the magnitude of the filtered horizontal GPS velocity
+                // 检查水平速度是否过大
                 const Vector2f gps_vel_horz = matrix::constrain(Vector2f(gps.vel_ned.xy()),
                                                                 -10.0f * _params.req_hdrift,
                                                                 10.0f * _params.req_hdrift);
-                _gps_state.vel_horz_filt[n] = gps_vel_horz * filter_coef + _gps_state.vel_ne_filt[n] * (1.0f - filter_coef);
-                _gps_state.vel_horz_filt_norm[n] = _gps_state.vel_ne_filt[n].norm();
+                _gps_state.vel_horz_filt[n] = gps_vel_horz * filter_coef + _gps_state.vel_horz_filt[n] * (1.0f - filter_coef);
+                _gps_state.vel_horz_filt_norm[n] = _gps_state.vel_horz_filt[n].norm();
                 _gps_state.check_fail_status[n].flags.hspeed = (_gps_state.vel_horz_filt_norm[n] > _params.req_hdrift);
 
             } else if (_control_status.flags.in_air) {
-                // These checks are always declared as passed when flying
-                // If on ground and moving, the last result before movement commenced is kept
+                // 以下的量在飞机起飞后将不在判断
                 _gps_state.check_fail_status[n].flags.hdrift = false;
                 _gps_state.check_fail_status[n].flags.vdrift = false;
                 _gps_state.check_fail_status[n].flags.hspeed = false;
@@ -2350,52 +2387,51 @@ namespace eskf {
                 reset_gps_drift_check_filters();
 
             } else {
-                // This is the case where the vehicle is on ground and IMU movement is blocking the drift calculation
+                // 飞机没有起飞, 但是飞机非静止状态
                 reset_gps_drift_check_filters();
             }
 
-            // save GPS fix for next time
+            // 保存当前时刻的gps位置
             _gps_state.pos_prev[n].initReference(lat, lon, _imu_sample_last.time_us);
             _gps_state.alt_prev[n] = 1e-3f * (float)gps.alt;
 
-            // Check  the filtered difference between GPS and EKF vertical velocity
+            // 检查gps的垂直速度与eskf的垂直速度的差异
             const float vz_diff_limit = 10.0f * _params.req_vdrift;
             const float diff_vel_z = math::constrain(gps.vel_ned(2) - _eskf._state.vel(2), -vz_diff_limit, vz_diff_limit);
             _gps_state.vel_vert_diff_filt[n] = diff_vel_z * filter_coef + _gps_state.vel_vert_diff_filt[n] * (1.0f - filter_coef);
             _gps_state.check_fail_status[n].flags.vspeed = (fabsf(_gps_state.vel_vert_diff_filt[n]) > _params.req_vdrift);
 
-            // assume failed first time through
+            // 假设gps最初的检查不通过
             if (_gps_state.last_fail_us[n] == 0) {
                 _gps_state.last_fail_us[n] = _imu_sample_last.time_us;
             }
 
-            // if any user selected checks have failed, record the fail time
-            if (
-                    _gps_state.check_fail_status[n].flags.fix ||
-                    (_gps_state.check_fail_status[n].flags.nsats   && (_params.gps_check_mask & MASK_GPS_NSATS)) ||
-                    (_gps_state.check_fail_status[n].flags.pdop    && (_params.gps_check_mask & MASK_GPS_PDOP)) ||
-                    (_gps_state.check_fail_status[n].flags.hacc    && (_params.gps_check_mask & MASK_GPS_HACC)) ||
-                    (_gps_state.check_fail_status[n].flags.vacc    && (_params.gps_check_mask & MASK_GPS_VACC)) ||
-                    (_gps_state.check_fail_status[n].flags.sacc    && (_params.gps_check_mask & MASK_GPS_SACC)) ||
-                    (_gps_state.check_fail_status[n].flags.hdrift  && (_params.gps_check_mask & MASK_GPS_HDRIFT)) ||
-                    (_gps_state.check_fail_status[n].flags.vdrift  && (_params.gps_check_mask & MASK_GPS_VDRIFT)) ||
-                    (_gps_state.check_fail_status[n].flags.hspeed  && (_params.gps_check_mask & MASK_GPS_HSPD)) ||
-                    (_gps_state.check_fail_status[n].flags.vspeed  && (_params.gps_check_mask & MASK_GPS_VSPD))
-                    ) {
+            // 判断所选择的检查是否失败, 并记录时间
+            if (_gps_state.check_fail_status[n].flags.fix ||
+                (_gps_state.check_fail_status[n].flags.nsats   && (_params.gps_check_mask & RunnerParameters::CHECK_GPS_NSATS)) ||
+                (_gps_state.check_fail_status[n].flags.pdop    && (_params.gps_check_mask & RunnerParameters::CHECK_GPS_PDOP)) ||
+                (_gps_state.check_fail_status[n].flags.hacc    && (_params.gps_check_mask & RunnerParameters::CHECK_GPS_HACC)) ||
+                (_gps_state.check_fail_status[n].flags.vacc    && (_params.gps_check_mask & RunnerParameters::CHECK_GPS_VACC)) ||
+                (_gps_state.check_fail_status[n].flags.sacc    && (_params.gps_check_mask & RunnerParameters::CHECK_GPS_SACC)) ||
+                (_gps_state.check_fail_status[n].flags.hdrift  && (_params.gps_check_mask & RunnerParameters::CHECK_GPS_HDRIFT)) ||
+                (_gps_state.check_fail_status[n].flags.vdrift  && (_params.gps_check_mask & RunnerParameters::CHECK_GPS_VDRIFT)) ||
+                (_gps_state.check_fail_status[n].flags.hspeed  && (_params.gps_check_mask & RunnerParameters::CHECK_GPS_HSPD)) ||
+                (_gps_state.check_fail_status[n].flags.vspeed  && (_params.gps_check_mask & RunnerParameters::CHECK_GPS_VSPD))
+                ) {
                 _gps_state.last_fail_us[n] = _imu_sample_last.time_us;
 
             } else {
                 _gps_state.last_pass_us[n] = _imu_sample_last.time_us;
             }
 
-            // continuous period without fail of x seconds required to return a healthy status
+            // 只有检查失败已经过去一段时间, 才能认为检查成功
             return is_timeout(_gps_state.last_fail_us[n], RunnerParameters::MIN_GPS_HEALTH);
         };
 
-        // Run GPS checks always
-        _gps_state.checks_passed[n] = gps_is_good(gps);
+        // 检查gps
+        _gps_state.checks_passed[n] = gps_is_good();
 
-        if (!_NED_origin_initialised && _gps_state.checks_passed[n]) {
+        if (!_gps_state.ned_origin_initialised && _gps_state.checks_passed[n]) {
             // If we have good GPS data set the origin's WGS-84 position to the last gps fix
             const double lat = gps.lat * 1.0e-7;
             const double lon = gps.lon * 1.0e-7;
@@ -2413,8 +2449,8 @@ namespace eskf {
             }
 
             // Take the current GPS height and subtract the filter height above origin to estimate the GPS height of the origin
-            _gps_state.alf_ref = 1e-3f * (float)gps.alt + _eskf._state.pos(2);
-            _NED_origin_initialised = true;
+            _gps_state.alt_ref = 1e-3f * (float)gps.alt + _eskf._state.pos(2);
+            _gps_state.ned_origin_initialised = true;
 
             _gps_state.earth_rate_ned = calc_earth_rate_ned((float)math::radians(_gps_state.pos_ref.getProjectionReferenceLat()));
             _gps_state.last_origin_us = _imu_sample_last.time_us;
@@ -2432,6 +2468,9 @@ namespace eskf {
 //                _mag_yaw_reset_req = true;
 //            }
 
+//            std::cout << "lat: " << _gps_state.pos_ref.getProjectionReferenceLat() << std::endl;
+//            std::cout << "lon: " << _gps_state.pos_ref.getProjectionReferenceLon() << std::endl;
+
             // save the horizontal and vertical position uncertainty of the origin
             _gps_state.origin_unc_pos_horz = gps.eph;
             _gps_state.origin_unc_pos_vert = gps.epv;
@@ -2439,7 +2478,7 @@ namespace eskf {
 //            _information_events.flags.gps_checks_passed = true;
 //            ECL_INFO("GPS checks passed");
 
-        } else if (!_NED_origin_initialised) {
+        } else if (!_gps_state.ned_origin_initialised) {
             // a rough 2D fix is still sufficient to lookup declination
             if ((gps.fix_type >= 2) && (gps.eph < 1000)) {
 
@@ -2466,7 +2505,7 @@ namespace eskf {
         }
 
         // start collecting GPS if there is a 3D fix and the NED origin has been set
-        return _NED_origin_initialised && (gps.fix_type >= 3);
+        return _gps_state.ned_origin_initialised && (gps.fix_type >= 3);
     }
 
 

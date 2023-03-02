@@ -5,17 +5,6 @@
 
 #define NUM_GPS 2
 
-// GPS pre-flight check bit locations
-#define MASK_GPS_NSATS  (1<<0)
-#define MASK_GPS_PDOP   (1<<1)
-#define MASK_GPS_HACC   (1<<2)
-#define MASK_GPS_VACC   (1<<3)
-#define MASK_GPS_SACC   (1<<4)
-#define MASK_GPS_HDRIFT (1<<5)
-#define MASK_GPS_VDRIFT (1<<6)
-#define MASK_GPS_HSPD   (1<<7)
-#define MASK_GPS_VSPD   (1<<8)
-
 namespace eskf {
     using matrix::AxisAnglef;
     using matrix::Dcmf;
@@ -157,6 +146,17 @@ namespace eskf {
     };
 
     struct RunnerParameters {
+        // GPS pre-flight check bit locations
+        static constexpr uint16_t CHECK_GPS_NSATS {1};
+        static constexpr uint16_t CHECK_GPS_PDOP {2};
+        static constexpr uint16_t CHECK_GPS_HACC {4};
+        static constexpr uint16_t CHECK_GPS_VACC {8};
+        static constexpr uint16_t CHECK_GPS_SACC {16};
+        static constexpr uint16_t CHECK_GPS_HDRIFT {32};
+        static constexpr uint16_t CHECK_GPS_VDRIFT {64};
+        static constexpr uint16_t CHECK_GPS_HSPD {128};
+        static constexpr uint16_t CHECK_GPS_VSPD {256};
+
         /* 磁场融合相关的独立常数 */
         static constexpr uint8_t MAG_FUSE_TYPE_AUTO {0};	///< The selection of either heading or 3D magnetometer fusion will be automatic
         static constexpr uint8_t MAG_FUSE_TYPE_HEADING {1};	///< Simple yaw angle fusion will always be used. This is less accurate, but less affected by earth field distortions. It should not be used for pitch angles outside the range from -60 to +60 deg
@@ -192,7 +192,7 @@ namespace eskf {
         static constexpr uint64_t FLOW_FUSE_TIMEOUT {7000000};
         static constexpr uint64_t HORZ_FUSE_TIMEOUT {7000000};
 
-        static constexpr uint64_t MIN_GPS_HEALTH {10000000};
+        static constexpr uint64_t MIN_GPS_HEALTH {1000000};
 
         /* 传感器延迟(ms) */
         float gps_delay_ms {0.f};
@@ -235,7 +235,7 @@ namespace eskf {
         int32_t flow_qual_min{1};
 
         /* GPS */
-        int32_t gps_check_mask{21};		///< bitmask used to control which GPS quality checks are used
+        uint16_t gps_check_mask{21};		///< bitmask used to control which GPS quality checks are used
         float req_hacc{5.0f};			///< maximum acceptable horizontal position error (m)
         float req_vacc{8.0f};			///< maximum acceptable vertical position error (m)
         float req_sacc{1.0f};			///< maximum acceptable speed error (m/s)
@@ -301,6 +301,7 @@ namespace eskf {
         Vector2f 	pos_horz;	///< 水平位置(相对于home点的北东向为正)
         float		hgt{};		///< 海拔高度(向上为正)
         Vector3f	vel;		///< gps速度(北东地)
+        float       yaw{};      ///< 板卡融合出的航向
         float		hacc{};		///< 水平位置标准差
         float		vacc{};		///< 海拔高度标准差
         float		sacc{};		///< 速度标准差
