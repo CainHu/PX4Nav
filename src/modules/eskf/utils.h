@@ -24,10 +24,10 @@ namespace eskf {
 
     class LowPassFilter3d {
     public:
-        LowPassFilter3d(float dt, float cutoff) : _filter{Butterworth<1>(dt, cutoff), Butterworth<1>(dt, cutoff), Butterworth<1>(dt, cutoff)} {};
+        LowPassFilter3d(float fs, float cutoff) : _filter{Butterworth<1>(fs, cutoff), Butterworth<1>(fs, cutoff), Butterworth<1>(fs, cutoff)} {};
 
         Vector3f operator()(const Vector3f &u) {
-            return {_filter[0](u(0)), _filter[0](u(1)), _filter[0](u(2))};
+            return {_filter[0](u(0)), _filter[1](u(1)), _filter[2](u(2))};
         }
 
         void set_fs_and_cutoff(float fs, float cutoff) {
