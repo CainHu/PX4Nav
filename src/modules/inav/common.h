@@ -1,11 +1,15 @@
-#ifndef ESKF_COMMON_H
-#define ESKF_COMMON_H
+//
+// Created by Cain on 2023/3/7.
+//
+
+#ifndef ECL_COMMON_H
+#define ECL_COMMON_H
 
 #include <matrix/math.hpp>
 
 #define NUM_GPS 2
 
-namespace eskf {
+namespace inav {
     using matrix::AxisAnglef;
     using matrix::Dcmf;
     using matrix::Eulerf;
@@ -79,9 +83,6 @@ namespace eskf {
         float mag_body_noise{5.0e-2f};     ///< 磁力计量测噪声 (Gauss)
         float mag_norm_noise{1.0e-3f};     ///< 磁场强度量测噪声 (Gauss)
         float mag_ang_noise{1.0e-3f};      ///< 磁场角度量测噪声 (rad)
-
-        // 虚拟噪声
-        float pos_horz_noaid_noise{10.0f};		///< observation noise for non-aiding position fusion (m)
 
         // 误差因子上限
         float gps_pos_horz_innov_gate {50.0f};   ///< gps水平位置误差因子上限
@@ -171,7 +172,7 @@ namespace eskf {
         static constexpr uint8_t MAG_EARTH_FUSE_TYPE_NORM {0};
         static constexpr uint8_t MAG_EARTH_FUSE_TYPE_ANG {1};
         static constexpr uint8_t MAG_EARTH_FUSE_TYPE_3D {2};
-        static constexpr uint8_t MAG_EARTH_FUSE_TYPE_NONE {3};
+        static constexpr uint8_t MAG_EARTH_TYPE_TYPE_NONE {3};
 
         /* 高度融合相关的独立常数 */
         static constexpr uint8_t HGT_SENSOR_AUTO {0};
@@ -202,13 +203,12 @@ namespace eskf {
         float ev_delay_ms {0.f};
         float flow_delay_ms {0.f};
         float baro_delay_ms {0.f};
-        float range_delay_ms {0.f};
 
 //        float gps_delay_ms {110.f};
 //        float ev_delay_ms {175.0f};
 //        float flow_delay_ms {5.0f};
 //        float baro_delay_ms {0.0f};
-//        float range_delay_ms {5.0f};
+        float range_delay_ms {5.0f};
         float mag_delay_ms {0.0f};
         float airspeed_delay_ms {100.0f};
 
@@ -614,6 +614,5 @@ namespace eskf {
         } flags;
         uint32_t value;
     };
-}
 
-#endif // !ESKF_COMMON_H
+#endif //ECL_COMMON_H

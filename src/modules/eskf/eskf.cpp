@@ -14,7 +14,7 @@ namespace eskf {
         reset_error_state();
         reset_covariance_matrix(0, DIM);
         regular_covariance_to_symmetric<DIM>(0);
-//        init_covariance();
+        init_covariance();
         reset_accmulator();
     }
 

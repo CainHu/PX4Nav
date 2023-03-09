@@ -53,6 +53,18 @@ namespace eskf {
             _filter[1].reset_filter_state();
             _filter[2].reset_filter_state();
         }
+
+        void reset_filter_state_by_input(const Vector3f &input) {
+            _filter[0].reset_filter_state_by_input(input(0));
+            _filter[1].reset_filter_state_by_input(input(1));
+            _filter[2].reset_filter_state_by_input(input(2));
+        }
+
+        void reset_filter_state_by_output(const Vector3f &output) {
+            _filter[0].reset_filter_state_by_output(output(0));
+            _filter[1].reset_filter_state_by_output(output(1));
+            _filter[2].reset_filter_state_by_output(output(2));
+        }
     private:
         Butterworth<1> _filter[3];
     };

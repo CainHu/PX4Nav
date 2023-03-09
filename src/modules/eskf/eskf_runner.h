@@ -27,6 +27,8 @@ namespace eskf {
 
         void update();
 
+        bool rough_alignment();
+
         bool should_collect_gps(const GpsMessage &gps, uint8_t n);
 
         void set_imu_data(const ImuSample &imu_sample);
@@ -87,6 +89,12 @@ namespace eskf {
 
         /* 水平GPS融合 */
         void control_gps_except_hgt_fusion();
+
+        /* 静止底座融合 */
+        void control_static_fusion();
+
+        /* 虚假位置融合 */
+        void control_fake_pos_fusion();
 
         void update_pre_integral(const ImuSample &sample);
         void predict_state_from_delay(const ImuSample &sample);
@@ -159,6 +167,8 @@ namespace eskf {
     public:
         ESKF &_eskf;    ///< 卡尔曼滤波器
     private:
+        bool _rough_alignment_completed {false};
+        bool _using_synthetic_position {false};
 
         /* 融合得到的数据(innov, innov_var, ratio_test) */
         FuseData<2> _gps_pos_horz_fuse_data[N_GPS];
@@ -175,6 +185,8 @@ namespace eskf {
         FuseData<3> _mag_body_fuse_data;
         FuseData<1> _mag_norm_fuse_data;
         FuseData<2> _mag_ang_fuse_data;
+        FuseData<3> _static_fuse_data;
+        FuseData<2> _fake_fuse_data;
 
         ImuDownSampler _imu_down_sampler;   ///< imu下采样器
 
@@ -193,8 +205,8 @@ namespace eskf {
         float _ang_rate_magnitude_filt {0.f};
         float _accel_magnitude_filt {0.f};
         Vector3f _accel_vec_filt {};
-        bool _is_manoeuvre_level_high;
-        bool _is_manoeuvre_level_low;
+        bool _is_manoeuvre_level_high {false};
+        bool _is_manoeuvre_level_low {false};
 
         // TODO: gps数据的精度
         float _gps_horz_error_norm {10.f};
@@ -247,11 +259,11 @@ namespace eskf {
         bool _non_mag_aiding_running_prev {true};
 
         uint64_t _time_prev_gps_us[N_GPS];
-        uint64_t _time_prev_baro_us;
-        uint64_t _time_prev_range_us;
-        uint64_t _time_prev_flow_us;
-        uint64_t _time_prev_ev_us;
-        uint64_t _time_prev_mag_us;
+        uint64_t _time_prev_baro_us {0};
+        uint64_t _time_prev_range_us {0};
+        uint64_t _time_prev_flow_us {0};
+        uint64_t _time_prev_ev_us {0};
+        uint64_t _time_prev_mag_us {0};
 
         uint64_t _time_last_ev_hgt_fuse {0};
         uint64_t _mag_align_last_time {0}; ///< 最近一次磁场对齐的时间
@@ -271,6 +283,22 @@ namespace eskf {
         bool _mag_fusion_inhibited_too_long {true};
         bool _mag_bias_observable {false};
         bool _mag_align_req {false};
+
+        uint8_t _imu_counter {0};
+        LowPassFilter3d _accel_lpf {200.f, 5.f};
+        LowPassFilter3d _gyro_lpf {200.f, 5.f};
+
+        uint8_t _baro_counter {0};
+        Butterworth<1> _baro_lpf {200.f, 5.f};
+
+        struct RoughAlignmentState {
+            bool imu_filter_init {false};
+            bool mag_filter_init {false};
+
+            LowPassFilter3d accel_lpf {200.f, 5.f};
+            LowPassFilter3d gyro_lpf {200.f, 5.f};
+
+        } _rough_alignment_state;
 
         struct GpsState {
             bool ned_origin_initialised {false};
@@ -377,9 +405,19 @@ namespace eskf {
             Vector2f last_known_posNE;
         } _flow_state;
 
+        struct StaticState {
+            uint64_t time_last_fuse {0};
+        } _static_state;
+
+        struct FakeState {
+            uint64_t time_last_fuse {0};
+            Vector2f last_known_posNE;
+        } _fake_state;
+
         // TODO: 临时
     public:
         filter_control_status_u _control_status {};
+        filter_control_status_u _control_status_prev {};
         innovation_fault_status_u _innovation_fault_status {};
         covariance_fault_status_u _covariance_fault_status {};
         fault_status_u _fault_status {};
@@ -390,6 +428,16 @@ namespace eskf {
     void ESKFRunner<DELAYS>::update() {
         static uint64_t count = 0;
         count++;
+
+        _control_status_prev.value = _control_status.value;
+
+        if (!_rough_alignment_completed) {
+            _rough_alignment_completed = rough_alignment();
+
+            if (!_rough_alignment_completed) {
+                return;
+            }
+        }
 
         if (_imu_updated) { // imu更新了同时意味着imu_buffer非空
             if (_imu_buffer.is_full()) {    // 只有当imu_buffer满了之后才运行eskf, 以保证永远在滞后的时刻进行融合
@@ -448,7 +496,7 @@ namespace eskf {
                         // TODO: 也许还有别的处理
                     }
 
-//                    std::cout << "gps " << int(i) << ", data_ready = " << _gps_state.data_ready[i] << std::endl;
+//                    std::cout << "gps " << int(i) << ", _data_ready = " << _gps_state._data_ready[i] << std::endl;
 //                    std::cout << "imu_time = " << imu_sample.time_us << ", gps_time = " << _gps_sample_delay[i].time_us << std::endl;
                 }
 
@@ -463,7 +511,7 @@ namespace eskf {
                     // TODO: fault的判断
                     _baro_state.faulty = false;
                 }
-//                std::cout << "baro, data_ready = " << _baro_state.data_ready << std::endl;
+//                std::cout << "baro, _data_ready = " << _baro_state._data_ready << std::endl;
 
                 // 对测距仪数据进行处理与校验
                 _time_prev_range_us = _range_sample_delay.time_us;
@@ -476,7 +524,7 @@ namespace eskf {
                     // TODO: 进行healthy的判断
                     _range_state.healthy = true;
                 }
-//                std::cout << "range, data_ready = " << _range_state.data_ready << std::endl;
+//                std::cout << "range, _data_ready = " << _range_state._data_ready << std::endl;
 
                 // 对光流数据进行处理与校验
                 _time_prev_flow_us = _flow_sample_delay.time_us;
@@ -487,7 +535,7 @@ namespace eskf {
                 } else {
 //                    _control_status.flags.opt_flow = false;
                 }
-//                std::cout << "opt-flow, data_ready = " << _flow_state.data_ready << std::endl;
+//                std::cout << "opt-flow, _data_ready = " << _flow_state._data_ready << std::endl;
 
                 // 对外部视觉数据进行处理与校验
                 _time_prev_ev_us = _ev_sample_delay.time_us;
@@ -497,7 +545,7 @@ namespace eskf {
                     // TODO: something;
 //                    _control_status.flags.ev
                 }
-//                std::cout << "ev, data_ready = " << _ev_data_ready << std::endl;
+//                std::cout << "ev, _data_ready = " << _ev_data_ready << std::endl;
 
                 // 对磁力计数据进行处理与校验
                 _time_prev_mag_us = _mag_sample_delay.time_us;
@@ -506,7 +554,7 @@ namespace eskf {
                 if (_mag_data_ready) {
                     // TODO: something;
                 }
-//                std::cout << "mag, data_ready = " << _mag_data_ready << std::endl;
+//                std::cout << "mag, _data_ready = " << _mag_data_ready << std::endl;
 
 //                std::cout << "step 3" << std::endl;
 
@@ -531,6 +579,134 @@ namespace eskf {
         }
     }
 
+    template<uint8_t DELAYS>
+    bool ESKFRunner<DELAYS>::rough_alignment() {
+        auto initialise_tilt = [&](const Vector3f &gyro, const Vector3f &acc) -> bool {
+            const float accel_norm = acc.norm();
+            const float gyro_norm = gyro.norm();
+
+            if (accel_norm < 0.8f * CONSTANTS_ONE_G ||
+                accel_norm > 1.2f * CONSTANTS_ONE_G ||
+                gyro_norm > math::radians(15.0f)) {
+                return false;
+            }
+
+            /*计算四元数:
+             * ez = (0, 0, 1)
+             * ez_body = (x, y, z)
+             * ez_body * ez = z
+             * ez_body x ez = (y, -x, 0)
+             * */
+            const Vector3f ez_body = -acc.normalized();
+            Quatf q(1.f + ez_body(2), ez_body(1), -ez_body(0), 0.f);
+            q.normalize();
+            _eskf.set_attitude(q);
+
+            _control_status.flags.tilt_align = true;
+
+//            Eulerf euler(q);
+//            std::cout << "acc: " << acc(0) << ", " << acc(1) << ", " << acc(2) << std::endl;
+//            std::cout << "ez_body" << ez_body(0) << ", " << ez_body(1) << ", " << ez_body(2) << std::endl;
+//            std::cout << "rough euler: " << euler(0) << ", " << euler(1) << ", " << euler(2) << std::endl;
+//            assert(-1 > 0);
+
+            return true;
+        };
+
+        auto initialise_head = [&](const Vector3f &mag_body) {
+            Vector3f mag_est_unit = _eskf._Rnb * mag_body;
+            mag_est_unit.normalize();
+
+            Vector3f mag_true_unit = get_mag_earth();
+            mag_true_unit.normalize();
+
+            float norm2 = sq(mag_est_unit(0)) + sq(mag_est_unit(1));
+            float sin_psi = mag_true_unit(1) * mag_est_unit(0) - mag_true_unit(0) * mag_est_unit(1);
+            float cos_psi = mag_true_unit(0) * mag_est_unit(0) + mag_true_unit(1) * mag_est_unit(1);
+            Quatf q(norm2 + cos_psi, 0.f, 0.f, sin_psi);
+            q.normalize();
+
+            q = q * _eskf._state.quat_nominal;
+            q.normalize();
+            _eskf.set_attitude(q);
+
+            _control_status.flags.yaw_align = true;
+
+//            float psi = atan2f(sin_psi, cos_psi);
+//            std::cout << "head: " << psi << std::endl;
+//            assert(-1 > 0);
+        };
+
+        if (_imu_updated) {
+            const ImuSample &imu_sample = _imu_buffer.newest();
+
+            Vector3f gyro = imu_sample.delta_ang / imu_sample.delta_ang_dt;
+            Vector3f acc = imu_sample.delta_vel / imu_sample.delta_vel_dt;
+            if (_imu_counter) {
+                gyro = _gyro_lpf(gyro);
+                acc = _accel_lpf(acc);
+            } else {
+                _gyro_lpf.reset_filter_state_by_output(gyro);
+                _accel_lpf.reset_filter_state_by_output(gyro);
+            }
+            ++_imu_counter;
+
+            MagSample mag_sample;
+            if (_mag_buffer.pop_first_older_than(imu_sample.time_us, mag_sample)) {
+                if (_mag_body_lpf_counter) {
+                    _mag_body_lp = _mag_body_lpf(mag_sample.mag);
+                } else {
+                    _mag_body_lpf.reset_filter_state_by_output(mag_sample.mag);
+                    _mag_body_lp = mag_sample.mag;
+                }
+                ++_mag_body_lpf_counter;
+            }
+
+            BaroSample baro_sample;
+            if (_baro_buffer.pop_first_older_than(imu_sample.time_us, baro_sample)) {
+                if (_baro_counter) {
+                    _eskf._baro_bias = _baro_lpf(baro_sample.hgt);
+                } else {
+                    _baro_lpf.reset_filter_state_by_output(baro_sample.hgt);
+                    _eskf._baro_bias = baro_sample.hgt;
+                }
+                std::cout << _eskf._baro_bias << std::endl;
+                ++_baro_counter;
+            }
+
+            if (_params.mag_body_fusion_type <= RunnerParameters::MAG_FUSE_TYPE_3D) {
+                if (_mag_body_lpf_counter < DELAYS || _mag_body_lpf_counter < 100) {
+                    // not enough mag samples accumulated
+                    return false;
+                }
+            }
+
+            if (_baro_counter < DELAYS || _baro_counter < 100) {
+                return false;
+            }
+
+            if (!initialise_tilt(gyro, acc)) {
+                return false;
+            }
+
+            if (_params.mag_body_fusion_type <= RunnerParameters::MAG_FUSE_TYPE_3D) {
+                initialise_head(_mag_body_lp);
+            }
+
+//            _eskf.initialize();
+
+            _time_last_pos_vert_fuse = _imu_sample_last.time_us;
+            _time_last_pos_horz_fuse = _imu_sample_last.time_us;
+            _time_last_vel_vert_fuse = _imu_sample_last.time_us;
+            _time_last_vel_horz_fuse = _imu_sample_last.time_us;
+            _time_last_pos_vert_fuse_attempt = _imu_sample_last.time_us;
+            _time_last_pos_horz_fuse_attempt = _imu_sample_last.time_us;
+
+            return true;
+        } else {
+            return false;
+        }
+    }
 
 
     /*!
@@ -1134,7 +1310,7 @@ namespace eskf {
             // 如果之前没有开启光流融合模式, 若gps融合误差大于1, 则认为需要光流融合
             const float gps_err_norm_lim = _control_status.flags.opt_flow ? 0.7f : 1.0f;
 
-            // 原则上, 能不使用光流就不使用光流, 在飞机机动较好且最近进行过仿地相关融合时, 满足以下条件之一, 才允许光流的使用
+            // 原则上, 能不使用光流就不使用光流, 在飞机机动较好且最近进行过仿地相关融合和航向已经对齐时, 满足以下条件之一, 才允许光流的使用
             // 1. 飞机处于纯惯导融合
             // 2. 在gps水平融合模式下eskf水平融合误差过大
             // 3. 只有光流能提供水平状态的观测
@@ -1145,15 +1321,18 @@ namespace eskf {
             bool const is_range_data_used = is_recent(_terr_state.time_last_fuse, (uint64_t)10e6)
                                             || is_recent(_range_state.time_last_fuse, (uint64_t)10e6);
 
+            _flow_state.inhibit_flow_use = !_control_status.flags.tilt_align || !is_flow_required || !is_range_data_used;
+            _flow_state.inhibit_flow_use |= (_params.mag_body_fusion_type < RunnerParameters::MAG_FUSE_TYPE_NONE) && !_control_status.flags.yaw_align;
+
             // 若飞机机动较差, 则需要禁止光流的使用
             if (_control_status.flags.in_air) {
                 const bool flight_condition_not_ok = _control_status.flags.in_air && !is_terrain_estimate_valid();
-                _flow_state.inhibit_flow_use = flight_condition_not_ok || !_control_status.flags.tilt_align || !is_flow_required || !is_range_data_used;
+                _flow_state.inhibit_flow_use |= flight_condition_not_ok;
             } else {
                 const bool preflight_motion_not_ok = !_control_status.flags.in_air
                                                      && (is_timeout(_flow_state.time_good_motion_us, (uint64_t)1E5)
                                                          || is_recent(_flow_state.time_bad_motion_us, (uint64_t)5E6));
-                _flow_state.inhibit_flow_use = preflight_motion_not_ok || !_control_status.flags.tilt_align || !is_flow_required || !is_range_data_used;
+                _flow_state.inhibit_flow_use |= preflight_motion_not_ok;
             }
         };
 
@@ -1304,6 +1483,8 @@ namespace eskf {
         };
 
         auto fuse_pos_horz = [&](uint8_t i) {
+            std::cout << "fuse_pos_horz" << std::endl;
+
             uint8_t info = _eskf.fuse_pos_horz(_gps_sample_delay[i].pos_horz, _params.gps_pos_body[i],
                                                _gps_state.offset_nav[i], _eskf._params.gps_pos_horz_innov_gate,
                                                _eskf._params.gps_pos_horz_noise, _gps_pos_horz_fuse_data[i]);
@@ -1320,9 +1501,13 @@ namespace eskf {
                 if (info & (uint8_t)0x00001000b) {
                     _covariance_fault_status.flags.unhealthy_gps_pos_y |= (uint8_t)((uint8_t)0x00000001b << i);
                 }
+
+                std::cout << "fuse_pos_horz: fault" << std::endl;
             } else {
                 _time_last_pos_horz_fuse = _imu_sample_delay.time_us;
                 _gps_state.time_last_pos_horz_fuse[i] = _imu_sample_delay.time_us;
+
+                std::cout << "fuse_pos_horz: succeed" << std::endl;
             }
         };
 
@@ -1384,6 +1569,8 @@ namespace eskf {
         };
 
         auto reset_gps_fusion = [&](const std::function<bool(uint8_t)>& condition) -> bool {
+            std::cout << "reset_gps_fusion" << std::endl;
+
             float prior = 1.f;
             float sum_prior = 0.f;
             Vector2f sum_pos(0.f, 0.f);
@@ -1580,6 +1767,7 @@ namespace eskf {
 
             // 如果磁场没有被对齐过, 则需要对齐磁场
             _mag_align_req |= !_control_status.flags.mag_aligned;
+            _mag_align_req |= !_control_status.flags.yaw_align;
 
             // 检测当前磁场数据是否被禁止使用, 并记录磁场被禁止持续时间, 判断磁场数据是否长期被禁用
             check_mag_inhibition();
@@ -1588,6 +1776,7 @@ namespace eskf {
             _mag_align_req |= _mag_fusion_inhibited_too_long;
 
             if (no_other_vector_aiding_than_mag()) {
+                std::cout << "no_other_vector_aiding_than_mag" << std::endl;
                 // 没有gps信号, 或gps只有单天线可用, 或者没有外部视觉提供姿态, 此时需要使用磁力计修正姿态
                 // 在这个过程中需要冻结eskf中地球磁场的状态
 
@@ -1845,6 +2034,7 @@ namespace eskf {
 
             if (has_realigned_mag) {
                 _mag_align_req = false;
+                _control_status.flags.yaw_align = true;
                 _control_status.flags.mag_aligned = true;
                 _control_status.flags.mag_aligned_in_flight = true;
 
@@ -1873,6 +2063,7 @@ namespace eskf {
 
             if (has_realigned_mag) {
                 _mag_align_req = false;
+                _control_status.flags.yaw_align = true;
                 _control_status.flags.mag_aligned = true;
 
                 // 由于在室内飞行时, 停止了eskf中关于z轴角速度偏移的更新
@@ -2062,6 +2253,108 @@ namespace eskf {
         if (_control_status.flags.mag_bias) {
             _control_status.flags.mag_bias = false;
             _eskf.disable_estimation_mag_bias();
+        }
+    }
+
+    template<uint8_t DELAYS>
+    void ESKFRunner<DELAYS>::control_static_fusion() {
+        // Fuse zero velocity at a limited rate (every 200 milliseconds)
+        const bool static_update_ready = is_timeout(_static_state.time_last_fuse, (uint64_t)2e5);
+
+        if (static_update_ready) {
+            const bool continuing_conditions_passing = _control_status.flags.vehicle_at_rest
+                                                       && _control_status_prev.flags.vehicle_at_rest;
+
+            if (continuing_conditions_passing) {
+                Vector3f zeros {0.f, 0.f, 0.f};
+                float gate = 1e6f;
+                float noise = 0.001f;
+                _eskf.fuse_vel(zeros, zeros, zeros, zeros, zeros, gate, noise, _static_fuse_data);
+
+                _static_state.time_last_fuse = _imu_sample_last.time_us;
+            }
+        }
+
+    }
+
+    template<uint8_t DELAYS>
+    void ESKFRunner<DELAYS>::control_fake_pos_fusion() {
+        auto reset_fake_pos_fusion = [&] {
+            _fake_state.last_known_posNE = _eskf._state.pos.xy();
+//            resetHorizontalPositionToLastKnown();
+//            resetHorizontalVelocityToZero();
+            _fake_state.time_last_fuse = _imu_sample_last.time_us;
+        };
+
+        auto start_fake_pos_fusion = [&] {
+            if (!_using_synthetic_position) {
+                _using_synthetic_position = true;
+//                _fuse_hpos_as_odom = false; // TODO: needed?
+                reset_fake_pos_fusion();
+            }
+        };
+
+        auto stop_fake_pos_fusion = [&] {
+            _using_synthetic_position = false;
+        };
+
+        auto fuse_fake_position = [&] {
+            float noise;
+
+            if (_control_status.flags.in_air && _control_status.flags.tilt_align) {
+                noise = fmaxf(_eskf._params.pos_horz_noaid_noise, _eskf._params.gps_pos_horz_noise);
+
+            } else if (!_control_status.flags.in_air && _control_status.flags.vehicle_at_rest) {
+                // Accelerate tilt fine alignment by fusing more
+                // aggressively when the vehicle is at rest
+                noise = 0.01f;
+
+            } else {
+                noise = 0.5f;
+            }
+
+            const float fake_pos_innov_gate = 3.f;
+            Vector3f zeros {0.f, 0.f, 0.f};
+            uint8_t info = _eskf.fuse_pos_horz(_fake_state.last_known_posNE, zeros, zeros, fake_pos_innov_gate, noise, _fake_fuse_data);
+            if (info == 0) {
+                _fake_state.time_last_fuse = _imu_sample_last.time_us;
+            }
+        };
+
+
+        // If we aren't doing any aiding, fake position measurements at the last known position to constrain drift
+        // During intial tilt aligment, fake position is used to perform a "quasi-stationary" leveling of the EKF
+        const bool fake_data_ready = is_timeout(_fake_state.time_last_fuse, (uint64_t)2e5); // Fuse fake position at a limited rate
+
+        if (fake_data_ready) {
+            const bool continuing_conditions_passing = !is_horizontal_aiding_active();
+            const bool starting_conditions_passing = continuing_conditions_passing;
+
+            if (_using_synthetic_position) {
+                if (continuing_conditions_passing) {
+                    fuse_fake_position();
+
+                    const bool is_fusion_failing = is_timeout(_fake_state.time_last_fuse, (uint64_t)4e5);
+
+                    if (is_fusion_failing) {
+                        reset_fake_pos_fusion();
+                    }
+
+                } else {
+                    stop_fake_pos_fusion();
+                }
+
+            } else {
+                if (starting_conditions_passing) {
+                    start_fake_pos_fusion();
+
+                    if (_control_status.flags.tilt_align) {
+//                        // The fake position fusion is not started for initial alignement
+//                        _warning_events.flags.stopping_navigation = true;
+//                        ECL_WARN("stopping navigation");
+                    }
+                }
+            }
         }
     }
 
@@ -2508,7 +2801,7 @@ namespace eskf {
         // 检查gps
         _gps_state.checks_passed[n] = gps_is_good();
 
-        if (!_gps_state.ned_origin_initialised && _gps_state.checks_passed[n]) {
+        if (_rough_alignment_completed && !_gps_state.ned_origin_initialised && _gps_state.checks_passed[n]) {
             // 如果gps数据检查通过, 则初始化原点
             const double lat = gps.lat * 1.0e-7;
             const double lon = gps.lon * 1.0e-7;
@@ -2561,7 +2854,6 @@ namespace eskf {
         } else if (!_gps_state.ned_origin_initialised) {
             // 在2D模式下, 当经纬度误差满足一定条件时, 依然可用查表出本地磁场
             if ((gps.fix_type >= 2) && (gps.eph < 1000)) {
-
                 const bool declination_was_valid = PX4_ISFINITE(_gps_state.mag_declination);
 
                 // 当前的经纬度
@@ -2573,12 +2865,12 @@ namespace eskf {
                 _gps_state.mag_inclination = get_mag_inclination_radians((float)lat, (float)lon);
                 _gps_state.mag_strength = get_mag_strength_gauss((float)lat, (float)lon);
 
-//                // request mag yaw reset if there's a mag declination for the first time
-//                if (_params.mag_fusion_type != MAG_FUSE_TYPE_NONE) {
-//                    if (!declination_was_valid && PX4_ISFINITE(_mag_declination_gps)) {
-//                        _mag_yaw_reset_req = true;
-//                    }
-//                }
+                // request mag yaw reset if there's a mag declination for the first time
+                if (_params.mag_body_fusion_type != RunnerParameters::MAG_FUSE_TYPE_NONE) {
+                    if (!declination_was_valid && PX4_ISFINITE(_gps_state.mag_declination)) {
+                        _mag_align_req = true;
+                    }
+                }
 
                 _gps_state.earth_rate_ned = calc_earth_rate_ned((float)math::radians(lat));
             }
