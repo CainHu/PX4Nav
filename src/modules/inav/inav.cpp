@@ -5,7 +5,7 @@
 #include "inav.h"
 
 namespace inav {
-    INAV::INAV(ESKF &eskf, uint8_t buffer_size) : _eskf(eskf), _gps(this, buffer_size), _baro(this, buffer_size), _range(this, buffer_size) {
+    INAV::INAV(ESKF &eskf, uint8_t buffer_size) : _eskf(eskf), _gps(this, buffer_size), _ev(this, buffer_size), _baro(this, buffer_size), _range(this, buffer_size) {
         _hgt_aux_queues[RTK_HGT] = &_gps._hgt_aux_interface;
         _hgt_aux_queues[BARO_HGT] = &_baro._hgt_aux_interface;
         _hgt_aux_queues[GPS_HGT] = &_gps._hgt_aux_interface;
