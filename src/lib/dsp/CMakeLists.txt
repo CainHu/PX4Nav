@@ -40,5 +40,6 @@ add_library(dsp
 		inertial.hpp
 		butterworth.hpp
         chebyshev1.hpp
-		chebyshev2.hpp)
+		chebyshev2.hpp
+		notch_filter.hpp)
 set_target_properties(dsp PROPERTIES LINKER_LANGUAGE CXX)

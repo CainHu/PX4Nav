@@ -21,15 +21,6 @@ namespace inav {
 
     };
 
-    class GPSHorzAuxInterface : public HorzAuxInterface {
-    public:
-        explicit GPSHorzAuxInterface(Sensor *sensor) : HorzAuxInterface(sensor) {}
-
-        void fuse() override;
-        void reset() override;
-        void anomaly_detection() override;
-    };
-
     class ExVision : public Sensor {
     public:
         explicit ExVision(INAV *inav, uint8_t buffer_size);
