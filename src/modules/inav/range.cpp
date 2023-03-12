@@ -6,9 +6,8 @@
 #include "inav.h"
 
 namespace inav {
-    Range::Range(INAV *inav, uint8_t buffer_size) : Sensor(inav), _hgt_aux_interface(this) {
-        _buffer = new RangeSample[buffer_size];
-        _sample_delay = new RangeSample;
+    Range::Range(INAV *inav, uint8_t buffer_size) : Sensor(inav, buffer_size), _hgt_aiding_interface(this) {
+
     }
 
     void Range::update() {
@@ -21,23 +20,23 @@ namespace inav {
         cout << "pop delayed data from deque" << endl;
 
         // 异常检测
-        _hgt_aux_interface.anomaly_detection();
+        _hgt_aiding_interface.anomaly_detection();
     }
 
-    void RangeHgtAuxInterface::fuse() {
+    void RangeHgtAidingInterface::fuse() {
         cout << "fuse range hgt data to eskf" << endl;
         auto range = (Range *)_sensor;
 
         if (range->_data_ready) {
             //        auto *sample_delay = (GpsSample *)(gps->_sample_delay);
             // use   _sample_delay->hgt  to fuse
-            auto *sample_delay = (GpsSample *)(range->_sample_delay);
+            auto &sample_delay = range->_sample_delay;
 //            range->_inav._eskf.fuse_pos_vert(-sample_delay->hgt, range->_offset_body, range->_offset_nav, reject_gate, meas_noise, fuse_data);
         }
 
     }
 
-    void RangeHgtAuxInterface::reset() {
+    void RangeHgtAidingInterface::reset() {
         cout << "reset range hgt data to eskf" << endl;
         auto range = (Range *)_sensor;
 
@@ -47,7 +46,7 @@ namespace inav {
         }
     }
 
-    void RangeHgtAuxInterface::anomaly_detection() {
+    void RangeHgtAidingInterface::anomaly_detection() {
         cout << "anomaly detection of range hgt" << endl;
         auto range = (Range *)_sensor;
 

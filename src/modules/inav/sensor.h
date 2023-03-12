@@ -8,6 +8,7 @@
 #include <iostream>
 #include <mathlib/mathlib.h>
 #include <matrix/math.hpp>
+#include "utils.h"
 #include <modules/eskf/common.h>
 
 
@@ -16,20 +17,21 @@ namespace inav {
     using namespace eskf;
     class INAV;
 
+    template<class T>
     class Sensor {
     public:
-        explicit Sensor(INAV *inav) : _inav(inav) {};
+        explicit Sensor(INAV *inav, uint8_t buffer_size) : _inav(inav), _buffer(buffer_size) {};
         virtual void update() = 0;
-
-        INAV *_inav;
 
 //        bool _anomaly {false};
         bool _intermittent {false};
 //        bool _actived {false};
         bool _data_ready {false};
 
-        BaseSample *_buffer {};
-        BaseSample *_sample_delay {};
+        INAV *_inav;
+
+        Queue<T> _buffer;
+        T _sample_delay {};
 
         Vector3f _offset_body {};
         Vector3f _offset_nav {};

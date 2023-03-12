@@ -6,9 +6,8 @@
 #include "inav.h"
 
 namespace inav {
-    Baro::Baro(INAV *inav, uint8_t buffer_size) : Sensor(inav), _hgt_aux_interface(this) {
-        _buffer = new BaroSample[buffer_size];
-        _sample_delay = new BaroSample;
+    Baro::Baro(INAV *inav, uint8_t buffer_size) : Sensor(inav, buffer_size), _hgt_aiding_interface(this) {
+
     }
 
     void Baro::update() {
@@ -21,18 +20,18 @@ namespace inav {
         cout << "pop delayed data from deque" << endl;
 
         // 异常检测
-        _hgt_aux_interface.anomaly_detection();
+        _hgt_aiding_interface.anomaly_detection();
     }
 
-    void inav::BaroHgtAuxInterface::fuse() {
+    void inav::BaroHgtAidingInterface::fuse() {
         cout << "fuse baro hgt data to eskf" << endl;
     }
 
-    void inav::BaroHgtAuxInterface::reset() {
+    void inav::BaroHgtAidingInterface::reset() {
         cout << "reset baro hgt data to eskf" << endl;
     }
 
-    void inav::BaroHgtAuxInterface::anomaly_detection() {
+    void inav::BaroHgtAidingInterface::anomaly_detection() {
         cout << "anomaly detection of baro hgt" << endl;
         auto baro = (Baro *)_sensor;
 

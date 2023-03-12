@@ -6,12 +6,12 @@
 #define ECL_RANGE_H
 
 #include "sensor.h"
-#include "hgt_aux_interface.h"
+#include "hgt_aiding_interface.h"
 
 namespace inav {
-    class RangeHgtAuxInterface : public HgtAuxInterface {
+    class RangeHgtAidingInterface : public HgtAidingInterface {
     public:
-        explicit RangeHgtAuxInterface(Sensor *sensor) : HgtAuxInterface(sensor) {}
+        explicit RangeHgtAidingInterface(Sensor<RangeSample> *sensor) : HgtAidingInterface(sensor) {}
 
         void fuse() override;
         void reset() override;
@@ -21,19 +21,18 @@ namespace inav {
 
     };
 
-    class Range : public Sensor {
+    class Range : public Sensor<RangeSample> {
     public:
         explicit Range(INAV *inav, uint8_t buffer_size);
         void update() override;
 
-        RangeHgtAuxInterface _hgt_aux_interface;
+        RangeHgtAidingInterface _hgt_aiding_interface;
 
     protected:
         bool _healthy {false};
 
     private:
-        friend class HgtAuxInterface;
-        friend class RangeHgtAuxInterface;
+        friend class RangeHgtAidingInterface;
     };
 
 

@@ -8,12 +8,11 @@
 #include "sensor.h"
 
 namespace inav {
-    class AuxInterface {
+    class AidingInterface {
     public:
-        explicit AuxInterface(Sensor *sensor) : _sensor(sensor) {};
-//        HgtAuxInterface() = default;
+        explicit AidingInterface(void *sensor) : _sensor(sensor) {};
 
-        Sensor *_sensor;
+        void *_sensor;
 
         bool _anomaly {false};
         bool _actived {false};
@@ -28,9 +27,6 @@ namespace inav {
         virtual void reset() = 0;
         virtual void anomaly_detection() = 0;
 
-
-
-//        struct HgtAuxInterface *next{};
     };
 }
 

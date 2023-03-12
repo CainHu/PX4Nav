@@ -6,13 +6,15 @@
 #define ECL_BARO_H
 
 #include "sensor.h"
-#include "hgt_aux_interface.h"
+#include "hgt_aiding_interface.h"
+#include "magnet.h"
+
 
 namespace inav {
 
-    class BaroHgtAuxInterface : public HgtAuxInterface {
+    class BaroHgtAidingInterface : public HgtAidingInterface {
     public:
-        explicit BaroHgtAuxInterface(Sensor *sensor) : HgtAuxInterface(sensor) {}
+        explicit BaroHgtAidingInterface(Sensor<BaroSample> *sensor) : HgtAidingInterface(sensor) {}
 
         void fuse() override;
         void reset() override;
@@ -22,24 +24,20 @@ namespace inav {
 
     };
 
-    class Baro : public Sensor {
+
+    class Baro : public Sensor<BaroSample> {
     public:
         explicit Baro(INAV *inav, uint8_t buffer_size);
         void update() override;
 
-        BaroHgtAuxInterface _hgt_aux_interface;
+        BaroHgtAidingInterface _hgt_aiding_interface;
 
     protected:
         bool _fault {false};
 
     private:
-        friend class HgtAuxInterface;
-        friend class BaroHgtAuxInterface;
+        friend class BaroHgtAidingInterface;
     };
-
-
-
-
 
 }
 
