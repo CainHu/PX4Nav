@@ -36,9 +36,9 @@ namespace inav {
         Vector3f _offset_body {};
         Vector3f _offset_nav {};
 
-        Sensor *_next {nullptr};
+        Sensor *_brother {nullptr};
 
-//        uint64_t time_last_fuse {};
+//        uint64_t _time_last_fuse {};
     };
 
 

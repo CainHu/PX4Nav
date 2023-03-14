@@ -39,6 +39,15 @@ namespace inav {
         if (of->_data_ready) {
 //            gps->_inav->_eskf.set_pos_vert(-sum_gps_hgt_imu / sum_prior);
 //            _eskf.reset_covariance_matrix<1>(2, sq(_eskf._params.gps_pos_vert_noise));
+
+            _reset_req = false;
+        }
+    }
+
+    void OptFlowVelHorzAidingInterface::check_reset_req() {
+        auto of = (OptFlow *)_sensor;
+        if (!_anomaly) {
+
         }
     }
 
@@ -50,4 +59,5 @@ namespace inav {
             cout << "anomaly" << endl;
         }
     }
+
 }

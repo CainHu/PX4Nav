@@ -18,6 +18,7 @@ namespace inav {
 
         void fuse() override;
         void reset() override;
+        void check_reset_req() override;
         void anomaly_detection() override;
 
     protected:

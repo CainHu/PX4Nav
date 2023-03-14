@@ -31,7 +31,7 @@ namespace inav {
             //        auto *sample_delay = (GpsSample *)(gps->_sample_delay);
             // use   _sample_delay->hgt  to fuse
             auto &sample_delay = range->_sample_delay;
-//            range->_inav._eskf.fuse_pos_vert(-sample_delay->hgt, range->_offset_body, range->_offset_nav, reject_gate, meas_noise, fuse_data);
+//            range->_inav._eskf.fuse_pos_vert(-sample_delay->hgt, range->_offset_body, range->_offset_nav, _reject_gate, _meas_noise, fuse_data);
         }
 
     }
@@ -43,6 +43,15 @@ namespace inav {
         if (range->_data_ready) {
 //            gps->_inav._eskf.set_pos_vert(-sum_gps_hgt_imu / sum_prior);
 //            _eskf.reset_covariance_matrix<1>(2, sq(_eskf._params.gps_pos_vert_noise));
+
+            _reset_req = false;
+        }
+    }
+
+    void RangeHgtAidingInterface::check_reset_req() {
+        auto range = (Range *)_sensor;
+        if (!_anomaly) {
+            _reset_req |= range->_inav->_fault_status.flags.bad_acc_vertical;
         }
     }
 
@@ -51,7 +60,7 @@ namespace inav {
         auto range = (Range *)_sensor;
 
         if (!range->_inav->_fault_status.flags.bad_acc_vertical && _actived) {
-            _anomaly = range->_inav->is_recent(time_last_fuse, RunnerParameters::HGT_FUSE_TIMEOUT);
+            _anomaly = range->_inav->is_recent(_time_last_fuse, RunnerParameters::HGT_FUSE_TIMEOUT);
         }
 
         if (range->_intermittent || !range->_healthy) {
@@ -62,13 +71,7 @@ namespace inav {
             cout << "anomaly" << endl;
 //            _buffer.clear();
             range->_data_ready = false;
-        } else {
-            if (range->_inav->_fault_status.flags.bad_acc_vertical) {
-                _actived = false;
-            }
         }
     }
-
-
 
 }

@@ -23,7 +23,7 @@ namespace inav {
     using namespace eskf;
     using namespace std;
 
-    enum hgt_prior {
+    enum HGT_AID_SRC {
         RTK_HGT = 0,
         BARO_HGT = 1,
         GPS_HGT = 2,
@@ -32,21 +32,21 @@ namespace inav {
         NUM_HGT_AID_SRC
     };
 
-    enum horz_prior {
+    enum HORZ_AID_SRC {
         GPS_HORZ = 0,
         EV_HORZ = 1,
 
         NUM_HORZ_AID_SRC
     };
 
-    enum vel_vert_prior {
+    enum VEL_VERT_AID_SRC {
         GPS_VEL_VERT = 0,
         EV_VEL_VERT = 1,
 
         NUM_VEL_VERT_AID_SRC
     };
 
-    enum vel_horz_prior {
+    enum VEL_HORZ_AID_SRC {
         GPS_VEL_HORZ = 0,
         EV_VEL_HORZ = 1,
         OF_VEL_HORZ = 2,
@@ -54,7 +54,7 @@ namespace inav {
         NUM_VEL_HORZ_AID_SRC
     };
 
-    enum heading_prior {
+    enum HEAD_AID_SRC {
         RTK_HEAD = 0,
         MAG_HEAD = 1,
         GPS_HEAD = 2,
@@ -62,7 +62,7 @@ namespace inav {
         NUM_HEAD_AID_SRC
     };
 
-    enum vector_prior {
+    enum VECTOR_AID_SRC {
         RTK_VECTOR = 0,
         MAG_VECTOR = 1,
         GPS_VECTOR = 2,
@@ -81,18 +81,23 @@ namespace inav {
         // 公共api
         int get_number_of_active_horizontal_aiding_sources() const;
         bool is_horizontal_aiding_active() const;
-        bool is_other_source_of_horizontal_aiding_than(const int name_of_queue) const;
-        bool is_only_active_source_of_horizontal_aiding(const int name_of_queue) const;
-
-        int get_number_of_active_horizontal_velocity_aiding_sources() const;
-        bool is_horizontal_velocity_aiding_active() const;
-        bool is_other_source_of_horizontal_velocity_aiding_than(const int name_of_queue) const;
-        bool is_only_active_source_of_horizontal_velocity_aiding(const int name_of_queue) const;
+        bool is_other_source_of_horizontal_aiding_than(HORZ_AID_SRC src_id) const;
+        bool is_only_active_source_of_horizontal_aiding(HORZ_AID_SRC src_id) const;
 
         int get_number_of_active_vertical_velocity_aiding_sources() const;
         bool is_vertical_velocity_aiding_active() const;
-        bool is_other_source_of_vertical_velocity_aiding_than(const int name_of_queue) const;
-        bool is_only_active_source_of_vertical_velocity_aiding(const int name_of_queue) const;
+        bool is_other_source_of_vertical_velocity_aiding_than(VEL_VERT_AID_SRC src_id) const;
+        bool is_only_active_source_of_vertical_velocity_aiding(VEL_VERT_AID_SRC src_id) const;
+
+        int get_number_of_active_horizontal_velocity_aiding_sources() const;
+        bool is_horizontal_velocity_aiding_active() const;
+        bool is_other_source_of_horizontal_velocity_aiding_than(VEL_HORZ_AID_SRC src_id) const;
+        bool is_only_active_source_of_horizontal_velocity_aiding(VEL_HORZ_AID_SRC src_id) const;
+
+        int get_number_of_active_heading_aiding_sources() const;
+        bool is_heading_aiding_active() const;
+        bool is_other_source_of_heading_aiding_than(HEAD_AID_SRC src_id) const;
+        bool is_only_active_source_of_heading_aiding(HEAD_AID_SRC src_id) const;
 
         bool is_recent(uint64_t sensor_timestamp, uint64_t acceptance_interval) const;
         bool is_timeout(uint64_t sensor_timestamp, uint64_t timeout_period) const;
@@ -134,6 +139,10 @@ namespace inav {
         AidingInterface *_vel_vert_aiding_queues[NUM_VEL_VERT_AID_SRC]{};
         // 水平速度融合优先级队列
         AidingInterface *_vel_horz_aiding_queues[NUM_VEL_HORZ_AID_SRC]{};
+        // 偏航角融合优先队列
+        AidingInterface *_heading_aiding_queues[NUM_HEAD_AID_SRC]{};
+        // 方向向量融合优先队列
+        AidingInterface *_vector_aiding_queues[NUM_VECTOR_AID_SRC]{};
 
 
     private:
@@ -149,6 +158,7 @@ namespace inav {
         friend class GpsHorzAidingInterface;
         friend class GpsVelVertAidingInterface;
         friend class GpsVelHorzAidingInterface;
+        friend class GpsHeadingAidingInterface;
         friend class ExVisionHorzAidingInterface;
         friend class ExVisionVelVertAidingInterface;
         friend class ExVisionVelHorzAidingInterface;

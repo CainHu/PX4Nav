@@ -29,6 +29,19 @@ namespace inav {
 
     void inav::BaroHgtAidingInterface::reset() {
         cout << "reset baro hgt data to eskf" << endl;
+
+        auto baro = (Baro *)_sensor;
+        if (baro->_data_ready) {
+
+            _reset_req = false;
+        }
+    }
+
+    void BaroHgtAidingInterface::check_reset_req() {
+        auto baro = (Baro *)_sensor;
+        if (!_anomaly) {
+            _reset_req |= baro->_inav->_fault_status.flags.bad_acc_vertical;
+        }
     }
 
     void inav::BaroHgtAidingInterface::anomaly_detection() {
@@ -36,7 +49,7 @@ namespace inav {
         auto baro = (Baro *)_sensor;
 
         if (!baro->_inav->_fault_status.flags.bad_acc_vertical && _actived) {
-            _anomaly = baro->_inav->is_recent(time_last_fuse, RunnerParameters::HGT_FUSE_TIMEOUT);
+            _anomaly = baro->_inav->is_recent(_time_last_fuse, RunnerParameters::HGT_FUSE_TIMEOUT);
         }
 
 //        baro->_fault = true;
@@ -48,10 +61,6 @@ namespace inav {
             cout << "anomaly" << endl;
 //            _buffer.clear();
             baro->_data_ready = false;
-        } else {
-            if (baro->_inav->_fault_status.flags.bad_acc_vertical) {
-                _actived = false;
-            }
         }
     }
 }

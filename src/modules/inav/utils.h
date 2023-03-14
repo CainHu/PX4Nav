@@ -6,8 +6,19 @@
 #define INAV_UTILS_H
 
 #include <matrix/math.hpp>
+#include <lib/dsp/butterworth.hpp>
 
 namespace inav {
+    using matrix::AxisAnglef;
+    using matrix::Dcmf;
+    using matrix::Eulerf;
+    using matrix::Matrix3f;
+    using matrix::Quatf;
+    using matrix::Vector2f;
+    using matrix::Vector3f;
+    using matrix::wrap_pi;
+    using digital_signal_processing::Butterworth;
+
     template<typename T>
     class Queue {
     public:
@@ -86,6 +97,53 @@ namespace inav {
         uint8_t _size {0};
         uint8_t _head;
         uint8_t _tail {0};
+    };
+
+    class LowPassFilter3d {
+    public:
+        LowPassFilter3d(float fs, float cutoff) : _filter{Butterworth<1>(fs, cutoff), Butterworth<1>(fs, cutoff), Butterworth<1>(fs, cutoff)} {};
+
+        Vector3f operator()(const Vector3f &u) {
+            return {_filter[0](u(0)), _filter[1](u(1)), _filter[2](u(2))};
+        }
+
+        void set_fs_and_cutoff(float fs, float cutoff) {
+            _filter[0].set_fs_and_cutoff(fs, cutoff);
+            _filter[1].set_fs_and_cutoff(fs, cutoff);
+            _filter[2].set_fs_and_cutoff(fs, cutoff);
+        }
+
+        void set_fs(float fs) {
+            _filter[0].set_fs(fs);
+            _filter[1].set_fs(fs);
+            _filter[2].set_fs(fs);
+        }
+
+        void set_cutoff(float cutoff) {
+            _filter[0].set_cutoff(cutoff);
+            _filter[1].set_cutoff(cutoff);
+            _filter[2].set_cutoff(cutoff);
+        }
+
+        void reset_filter_state() {
+            _filter[0].reset_filter_state();
+            _filter[1].reset_filter_state();
+            _filter[2].reset_filter_state();
+        }
+
+        void reset_filter_state_by_input(const Vector3f &input) {
+            _filter[0].reset_filter_state_by_input(input(0));
+            _filter[1].reset_filter_state_by_input(input(1));
+            _filter[2].reset_filter_state_by_input(input(2));
+        }
+
+        void reset_filter_state_by_output(const Vector3f &output) {
+            _filter[0].reset_filter_state_by_output(output(0));
+            _filter[1].reset_filter_state_by_output(output(1));
+            _filter[2].reset_filter_state_by_output(output(2));
+        }
+    private:
+        Butterworth<1> _filter[3];
     };
 }
 

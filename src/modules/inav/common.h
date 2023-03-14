@@ -545,6 +545,7 @@ namespace inav {
             bool rng_fault : 1; ///< 32 - true when the range finder has been declared faulty and is no longer being used
             bool inertial_dead_reckoning : 1; ///< 33 - true if we are no longer fusing measurements that constrain horizontal velocity drift
             bool wind_dead_reckoning     : 1; ///< 34 - true if we are navigationg reliant on wind relative measurements
+            bool heading_not_required : 1;
         } flags;
         uint64_t value;
     };

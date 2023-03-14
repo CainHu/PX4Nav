@@ -10,6 +10,7 @@
 #include "horz_aiding_interface.h"
 #include "vel_horz_aiding_interface.h"
 #include "vel_vert_aiding_interface.h"
+#include "heading_aiding_interface.h"
 
 namespace inav {
     class GpsHgtAidingInterface : public HgtAidingInterface {
@@ -18,6 +19,7 @@ namespace inav {
 
         void fuse() override;
         void reset() override;
+        void check_reset_req() override;
         void anomaly_detection() override;
 
     protected:
@@ -31,6 +33,7 @@ namespace inav {
 
         void fuse() override;
         void reset() override;
+        void check_reset_req() override;
         void anomaly_detection() override;
     };
 
@@ -41,6 +44,7 @@ namespace inav {
 
         void fuse() override;
         void reset() override;
+        void check_reset_req() override;
         void anomaly_detection() override;
     };
 
@@ -51,6 +55,18 @@ namespace inav {
 
         void fuse() override;
         void reset() override;
+        void check_reset_req() override;
+        void anomaly_detection() override;
+    };
+
+
+    class GpsHeadingAidingInterface : public HeadingAidingInterface {
+    public:
+        explicit GpsHeadingAidingInterface(Sensor<GpsSample> *sensor) : HeadingAidingInterface(sensor) {}
+
+        void fuse() override;
+        void reset() override;
+        void check_reset_req() override;
         void anomaly_detection() override;
     };
 
@@ -83,6 +99,7 @@ namespace inav {
         friend class GpsHorzAidingInterface;
         friend class GpsVelVertAidingInterface;
         friend class GpsVelHorzAidingInterface;
+        friend class GpsHeadingAidingInterface;
         friend class INAV;
     };
 

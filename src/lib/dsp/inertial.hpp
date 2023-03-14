@@ -53,7 +53,7 @@ namespace digital_signal_processing {
             assert(fs > 0.f);   // 频率必须大于0
             _fs = fs;
 
-            bool cutoff_p_finite = std::isfinite(cutoff_p);
+            bool cutoff_p_finite = PX4_ISFINITE(cutoff_p);
             if (cutoff_p_finite) {
                 assert(cutoff_p > 0.f); // 频率必须大于0
                 assert(cutoff_p < 0.5f * _fs);  // 必须小于采样率的一半
@@ -61,7 +61,7 @@ namespace digital_signal_processing {
             _cutoff_p = cutoff_p;
             _cutoff_p_finite = cutoff_p_finite;
 
-            bool cutoff_z_finite = std::isfinite(cutoff_z);
+            bool cutoff_z_finite = PX4_ISFINITE(cutoff_z);
             if (cutoff_z_finite) {
                 assert(cutoff_z > 0.f); // 频率必须大于0
                 assert(cutoff_z < 0.5f * _fs);  // 必须小于采样率的一半
@@ -89,7 +89,7 @@ namespace digital_signal_processing {
          * @param cutoff_z - 零点时间常数对应的截止频率 (dB)
          */
         void set_cutoff(float cutoff_p, float cutoff_z) {
-            bool cutoff_p_finite = std::isfinite(cutoff_p);
+            bool cutoff_p_finite = PX4_ISFINITE(cutoff_p);
             if (cutoff_p_finite) {
                 assert(cutoff_p > 0.f); // 频率必须大于0
                 assert(cutoff_p < 0.5f * _fs);  // 必须小于采样率的一半
@@ -97,7 +97,7 @@ namespace digital_signal_processing {
             _cutoff_p = cutoff_p;
             _cutoff_p_finite = cutoff_p_finite;
 
-            bool cutoff_z_finite = std::isfinite(cutoff_z);
+            bool cutoff_z_finite = PX4_ISFINITE(cutoff_z);
             if (cutoff_z_finite) {
                 assert(cutoff_z > 0.f); // 频率必须大于0
                 assert(cutoff_z < 0.5f * _fs);  // 必须小于采样率的一半

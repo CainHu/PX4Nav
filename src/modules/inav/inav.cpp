@@ -134,15 +134,40 @@ namespace inav {
         return get_number_of_active_horizontal_aiding_sources() > 0;
     }
 
-    bool INAV::is_other_source_of_horizontal_aiding_than(int name_of_queue) const {
-        assert(name_of_queue < NUM_HORZ_AID_SRC);
+    bool INAV::is_other_source_of_horizontal_aiding_than(HORZ_AID_SRC src_id) const {
+        assert(src_id < NUM_HORZ_AID_SRC);
         const int nb_sources = get_number_of_active_horizontal_aiding_sources();
-        return _horz_aiding_queues[name_of_queue] ? nb_sources > 1 : nb_sources > 0;
+        return _horz_aiding_queues[src_id] ? nb_sources > 1 : nb_sources > 0;
     }
 
-    bool INAV::is_only_active_source_of_horizontal_aiding(const int name_of_queue) const {
-        assert(name_of_queue < NUM_HORZ_AID_SRC);
-        return _horz_aiding_queues[name_of_queue] && get_number_of_active_horizontal_aiding_sources() > 1;
+    bool INAV::is_only_active_source_of_horizontal_aiding(HORZ_AID_SRC src_id) const {
+        assert(src_id < NUM_HORZ_AID_SRC);
+        return _horz_aiding_queues[src_id] && get_number_of_active_horizontal_aiding_sources() == 1;
+    }
+
+    int INAV::get_number_of_active_vertical_velocity_aiding_sources() const {
+        int num = 0;
+        for (auto vel_vert_aux_queue : _vel_vert_aiding_queues) {
+            if (vel_vert_aux_queue && vel_vert_aux_queue->_actived) {
+                ++num;
+            }
+        }
+        return num;
+    }
+
+    bool INAV::is_vertical_velocity_aiding_active() const {
+        return get_number_of_active_vertical_velocity_aiding_sources() > 0;
+    }
+
+    bool INAV::is_other_source_of_vertical_velocity_aiding_than(VEL_VERT_AID_SRC src_id) const {
+        assert(src_id < NUM_VEL_VERT_AID_SRC);
+        const int nb_sources = get_number_of_active_vertical_velocity_aiding_sources();
+        return _vel_vert_aiding_queues[src_id] ? nb_sources > 1 : nb_sources > 0;
+    }
+
+    bool INAV::is_only_active_source_of_vertical_velocity_aiding(VEL_VERT_AID_SRC src_id) const {
+        assert(src_id < NUM_VEL_VERT_AID_SRC);
+        return _vel_vert_aiding_queues[src_id] && get_number_of_active_vertical_velocity_aiding_sources() == 1;
     }
 
     int INAV::get_number_of_active_horizontal_velocity_aiding_sources() const {
@@ -155,19 +180,44 @@ namespace inav {
         return num;
     }
 
-    bool INAV::is_vertical_velocity_aiding_active() const {
-        return get_number_of_active_vertical_velocity_aiding_sources() > 0;
+    bool INAV::is_horizontal_velocity_aiding_active() const {
+        return get_number_of_active_horizontal_velocity_aiding_sources() > 0;
     }
 
-    bool INAV::is_other_source_of_vertical_velocity_aiding_than(int name_of_queue) const {
-        assert(name_of_queue < NUM_VEL_VERT_AID_SRC);
-        const int nb_sources = get_number_of_active_vertical_velocity_aiding_sources();
-        return _vel_vert_aiding_queues[name_of_queue] ? nb_sources > 1 : nb_sources > 0;
+    bool INAV::is_other_source_of_horizontal_velocity_aiding_than(VEL_HORZ_AID_SRC src_id) const {
+        assert(src_id < NUM_VEL_HORZ_AID_SRC);
+        const int nb_sources = get_number_of_active_horizontal_velocity_aiding_sources();
+        return _vel_horz_aiding_queues[src_id] ? nb_sources > 1 : nb_sources > 0;
     }
 
-    bool INAV::is_only_active_source_of_vertical_velocity_aiding(const int name_of_queue) const {
-        assert(name_of_queue < NUM_VEL_VERT_AID_SRC);
-        return _vel_vert_aiding_queues[name_of_queue] && get_number_of_active_vertical_velocity_aiding_sources() > 1;
+    bool INAV::is_only_active_source_of_horizontal_velocity_aiding(VEL_HORZ_AID_SRC src_id) const {
+        assert(src_id < NUM_VEL_HORZ_AID_SRC);
+        return _vel_horz_aiding_queues[src_id] && get_number_of_active_horizontal_velocity_aiding_sources() == 1;
+    }
+
+    int INAV::get_number_of_active_heading_aiding_sources() const {
+        int num = 0;
+        for (auto heading_aiding_queue : _heading_aiding_queues) {
+            if (heading_aiding_queue && heading_aiding_queue->_actived) {
+                ++num;
+            }
+        }
+        return num;
+    }
+
+    bool INAV::is_heading_aiding_active() const {
+        return get_number_of_active_heading_aiding_sources() > 0;
+    }
+
+    bool INAV::is_other_source_of_heading_aiding_than(HEAD_AID_SRC src_id) const {
+        assert(src_id < NUM_HEAD_AID_SRC);
+        const int nb_sources = get_number_of_active_heading_aiding_sources();
+        return _heading_aiding_queues[src_id] ? nb_sources > 1 : nb_sources > 0;
+    }
+
+    bool INAV::is_only_active_source_of_heading_aiding(HEAD_AID_SRC src_id) const {
+        assert(src_id < NUM_HEAD_AID_SRC);
+        return _heading_aiding_queues[src_id] && get_number_of_active_heading_aiding_sources() == 1;
     }
 
     bool INAV::is_recent(uint64_t sensor_timestamp, uint64_t acceptance_interval) const {
@@ -176,30 +226,5 @@ namespace inav {
 
     bool INAV::is_timeout(uint64_t sensor_timestamp, uint64_t timeout_period) const {
         return sensor_timestamp + timeout_period < _time_current;
-    }
-
-    bool INAV::is_horizontal_velocity_aiding_active() const {
-        return get_number_of_active_horizontal_velocity_aiding_sources() > 0;
-    }
-
-    bool INAV::is_other_source_of_horizontal_velocity_aiding_than(int name_of_queue) const {
-        assert(name_of_queue < NUM_VEL_HORZ_AID_SRC);
-        const int nb_sources = get_number_of_active_horizontal_velocity_aiding_sources();
-        return _vel_horz_aiding_queues[name_of_queue] ? nb_sources > 1 : nb_sources > 0;
-    }
-
-    bool INAV::is_only_active_source_of_horizontal_velocity_aiding(const int name_of_queue) const {
-        assert(name_of_queue < NUM_VEL_HORZ_AID_SRC);
-        return _vel_horz_aiding_queues[name_of_queue] && get_number_of_active_horizontal_velocity_aiding_sources() > 1;
-    }
-
-    int INAV::get_number_of_active_vertical_velocity_aiding_sources() const {
-        int num = 0;
-        for (auto vel_vert_aux_queue : _vel_vert_aiding_queues) {
-            if (vel_vert_aux_queue && vel_vert_aux_queue->_actived) {
-                ++num;
-            }
-        }
-        return num;
     }
 }

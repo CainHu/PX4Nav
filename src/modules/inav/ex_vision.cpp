@@ -43,6 +43,14 @@ namespace inav {
         if (ev->_data_ready) {
 //            gps->_inav->_eskf.set_pos_vert(-sum_gps_hgt_imu / sum_prior);
 //            _eskf.reset_covariance_matrix<1>(2, sq(_eskf._params.gps_pos_vert_noise));
+
+            _reset_req = false;
+        }
+    }
+
+    void ExVisionHorzAidingInterface::check_reset_req() {
+        if (!_anomaly) {
+
         }
     }
 
@@ -73,6 +81,15 @@ namespace inav {
         if (ev->_data_ready) {
 //            gps->_inav->_eskf.set_pos_vert(-sum_gps_hgt_imu / sum_prior);
 //            _eskf.reset_covariance_matrix<1>(2, sq(_eskf._params.gps_pos_vert_noise));
+
+            _reset_req = false;
+        }
+    }
+
+    void ExVisionVelVertAidingInterface::check_reset_req() {
+        auto ev = (ExVision *)_sensor;
+        if (!_anomaly) {
+
         }
     }
 
@@ -103,6 +120,15 @@ namespace inav {
         if (ev->_data_ready) {
 //            gps->_inav->_eskf.set_pos_vert(-sum_gps_hgt_imu / sum_prior);
 //            _eskf.reset_covariance_matrix<1>(2, sq(_eskf._params.gps_pos_vert_noise));
+
+            _reset_req = false;
+        }
+    }
+
+    void ExVisionVelHorzAidingInterface::check_reset_req() {
+        auto ev = (ExVision *)_sensor;
+        if (!_anomaly) {
+
         }
     }
 
